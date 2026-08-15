@@ -1,0 +1,1 @@
+{"title": "\ud83d\udc85 Nail Polish Inventory Grid", "display_fields": ["Brand", "Name"], "field_formats": {"Brand": {"bold": true, "italic": false, "underline": true, "align": "Left", "size": "Medium"}, "Name": {"bold": false, "italic": true, "underline": false, "align": "Left", "size": "Large"}}}

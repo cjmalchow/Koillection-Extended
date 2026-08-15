@@ -60,6 +60,10 @@ class SettingsType extends AbstractType
             ->add('wishlistsFeatureEnabled', CheckboxType::class, [
                 'required' => false,
             ])
+            ->add('locatorFeatureEnabled', CheckboxType::class, [
+            'required' => false,
+            'label' => 'Enable Locator Grid feature',
+            ])
             ->add('tagsFeatureEnabled', CheckboxType::class, [
                 'required' => false,
             ])

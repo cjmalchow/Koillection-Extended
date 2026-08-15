@@ -1,0 +1,28 @@
+{% extends 'layout.html.twig' %}
+
+{% block title %}Nail Polish Locator{% endblock %}
+
+{% block breadcrumb %}
+    <div class="breadcrumb">
+        <a href="{{ path('app_collection_index') }}">{{ 'menu.collections'|trans }}</a>
+        <i class="fa fa-angle-right separator"></i>
+        <span>Locator Grid</span>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="collection-header">
+        <div class="title-block">
+            <h1><i class="fa fa-map-marker fa-fw"></i> Nail Polish Locator</h1>
+        </div>
+        <div class="btn-holder">
+            <a href="{{ path('app_collection_index') }}" class="btn waves-effect waves-light" style="background-color: #26a69a; color: white; border-radius: 4px;">
+                <i class="fa fa-arrow-left fa-fw"></i> Return to Collections
+            </a>
+        </div>
+    </div>
+
+    <div class="content-block" style="padding: 0; overflow: hidden; height: 75vh; border-radius: 4px; box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14);">
+        <iframe src="http://localhost:8501" width="100%" height="100%" style="border: none;"></iframe>
+    </div>
+{% endblock %}

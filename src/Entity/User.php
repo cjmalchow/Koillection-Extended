@@ -183,6 +183,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface, Breadcr
     #[Groups(['user:read', 'user:write'])]
     private bool $wishlistsFeatureEnabled = true;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => true])]
+    private bool $locatorFeatureEnabled = true;
+
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => 1])]
     #[Groups(['user:read', 'user:write'])]
     private bool $tagsFeatureEnabled = true;
@@ -562,6 +565,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface, Breadcr
 
         return $this;
     }
+
+    public function isLocatorFeatureEnabled(): bool
+{
+    return $this->locatorFeatureEnabled;
+}
+
+    public function setLocatorFeatureEnabled(bool $locatorFeatureEnabled): self
+{
+    $this->locatorFeatureEnabled = $locatorFeatureEnabled;
+
+    return $this;
+}
 
     public function isTagsFeatureEnabled(): bool
     {

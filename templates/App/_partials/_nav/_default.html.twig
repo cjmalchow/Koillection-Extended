@@ -27,6 +27,15 @@
     </a>
 </li>
 
+{% if isFeatureEnabled('locator') %}
+    <li class="{{ 'app_locator' in route ? 'current' }} sidebar-element">
+        <a href="{{ path('app_locator') }}">
+            <i class="fa fa-map-marker fa-fw"></i>
+            <span>Locator Grid</span>
+        </a>
+    </li>
+{% endif %}
+
 {% if isFeatureEnabled('wishlists') %}
     <li class="{{ 'app_wishlist' in route or 'app_wish' in route ? 'current' }} sidebar-element">
         <a href="{{ path('app_wishlist_index') }}">
@@ -166,4 +175,3 @@
         <span>{{ 'menu.logout'|trans }}</span>
     </a>
 </li>
-
