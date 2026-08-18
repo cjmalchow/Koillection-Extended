@@ -15,15 +15,26 @@
     <img src="https://img.shields.io/badge/mysql->=8.0-blue" />
 <p>
 
-# Koillection (Bulk Actions Fork)
+# 💅 Koillection (Nail Polish Edition)
 
-*This is a customized fork of the original [Koillection](https://github.com/benjaminjonard/koillection) app. It has been specifically modified to make managing large collections easier and faster by introducing multi-selection and bulk editing tools.*
+*This is a highly customized fork of the original [Koillection](https://github.com/benjaminjonard/koillection) app. It has been specifically tailored to make managing a large nail polish collection easier by introducing bulk editing tools and a custom-built, Python-powered physical location tracker.*
 
-### ✨ Custom Features Added to this Fork:
-* **Multi-Select List View:** Added checkboxes to the main item list view to select multiple items at once.
-* **Bulk Duplicate:** A new button to instantly clone one or multiple items (perfect for quickly adding similar items to your database!).
+### ✨ Custom Features in this Version:
+
+#### 1. The Locator App (Streamlit Integration)
+A dedicated visual grid and sticker generator to track the physical location of your items.
+* **Visual & Printable Grids:** View your collection in a digital grid with images, or generate clean, ink-friendly printable stickers for your physical storage boxes.
+* **Dynamic Box Sizing:** Configure custom box sizes (columns and rows) directly from the sidebar.
+* **Customizable Text:** Choose exactly which data fields (Name, Brand, Finish, etc.) appear on your grid.
+* **Auto-Fit & Formatting:** Text automatically scales to fit perfectly inside the grid cells. You can also apply Bold, Italic, Underline, and Alignment settings to individual fields.
+* **Unassigned & Custom Locations:** Items without a standard box location (e.g., "Display Shelf" or unassigned items) are automatically grouped into their own dedicated tabs.
+* **Settings Integration:** The Locator App can be turned on or off directly from the native Koillection User Settings page.
+
+#### 2. Bulk Actions (List View)
+* **Multi-Select:** Added checkboxes to the main item list view to select multiple items at once.
+* **Bulk Duplicate:** Instantly clone one or multiple items (perfect for quickly adding similar polishes to your database!).
 * **Bulk Move:** A new dropdown menu and button to quickly move multiple selected items to a different collection.
-* **Bulk Delete:** A new button to permanently delete multiple items at once.
+* **Bulk Delete:** Permanently delete multiple items at once.
 
 ---
 
