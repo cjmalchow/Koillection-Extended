@@ -7,9 +7,35 @@ import mimetypes
 import io
 import textwrap
 import json
+import urllib.request
+import time
 from PIL import Image, ImageDraw, ImageFont
 
 st.set_page_config(page_title="Nail Polish Locator", layout="wide")
+
+# --- FONT DOWNLOADER ---
+@st.cache_resource
+def ensure_fonts():
+    base_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/static/"
+    fonts = {
+        "Roboto-Regular.ttf": base_url + "Roboto-Regular.ttf",
+        "Roboto-Bold.ttf": base_url + "Roboto-Bold.ttf",
+        "Roboto-Italic.ttf": base_url + "Roboto-Italic.ttf",
+        "Roboto-BoldItalic.ttf": base_url + "Roboto-BoldItalic.ttf"
+    }
+    errors = []
+    for f_name, url in fonts.items():
+        f_path = os.path.join("/app", f_name)
+        if not os.path.exists(f_path) or os.path.getsize(f_path) < 10000:
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as response, open(f_path, 'wb') as out_file:
+                    out_file.write(response.read())
+            except Exception as e:
+                errors.append(f"{f_name}: {e}")
+    return errors
+
+font_errors = ensure_fonts()
 
 # --- CONFIGURATION MANAGERS ---
 CONFIG_FILE = "box_config.json"
@@ -47,8 +73,10 @@ def edit_title_dialog(current_title):
     st.markdown("Enter a new title for your locator app:")
     new_title = st.text_input("Title", value=current_title, label_visibility="collapsed")
     if st.button("Save Title", type="primary"):
-        app_settings["title"] = new_title
-        save_settings(app_settings)
+        with st.spinner("Saving new title..."):
+            app_settings["title"] = new_title
+            save_settings(app_settings)
+            time.sleep(0.5)
         st.rerun()
 
 # --- DATABASE CONNECTION & DATA PROCESSING ---
@@ -59,10 +87,7 @@ def load_data():
     query = """
     SELECT i.id, i.name, i.image, d.label, d.value
     FROM koi_item i
-    LEFT JOIN koi_datum d ON i.id = d.item_id
-    WHERE i.id IN (
-        SELECT item_id FROM koi_datum WHERE label LIKE 'Location' OR label LIKE 'Other Location(s)'
-    );
+    LEFT JOIN koi_datum d ON i.id = d.item_id;
     """
     return conn.query(query)
 
@@ -98,11 +123,14 @@ if not display_fields:
 # --- SIDEBAR: SETTINGS ---
 st.sidebar.header("⚙️ Settings")
 
+if font_errors:
+    st.sidebar.error("⚠️ Font Download Failed:\n" + "\n".join(font_errors))
+
 if st.sidebar.button("🔄 Refresh Database", help="Click this to instantly pull the newest items and fields from Koillection!"):
     st.cache_data.clear()
     st.rerun()
 
-# 1. DISPLAY SETTINGS (WITH ALIGNMENT & SIZE!)
+# 1. DISPLAY SETTINGS
 with st.sidebar.expander("👁️ Customize Grid Text", expanded=False):
     st.markdown("<small>Select, reorder, and format the information displayed on the grid. <b>To reorder, clear the box and click them in the order you want!</b></small>", unsafe_allow_html=True)
     
@@ -117,7 +145,7 @@ with st.sidebar.expander("👁️ Customize Grid Text", expanded=False):
     new_formats = {}
     for f in selected_fields:
         st.markdown(f"<strong style='color: #26a69a;'>{f}</strong>", unsafe_allow_html=True)
-        current_fmt = field_formats.get(f, {"bold": False, "italic": False, "underline": False, "align": "Center", "size": "Medium"})
+        current_fmt = field_formats.get(f, {"bold": False, "italic": False, "underline": False, "align": "Center", "size": "Auto-Fit"})
         
         col1, col2, col3 = st.columns(3)
         with col1: b = st.checkbox("Bold", value=current_fmt.get("bold", False), key=f"b_{f}")
@@ -126,16 +154,19 @@ with st.sidebar.expander("👁️ Customize Grid Text", expanded=False):
         
         col_a, col_s = st.columns(2)
         with col_a: align = st.selectbox("Alignment", ["Left", "Center", "Right"], index=["Left", "Center", "Right"].index(current_fmt.get("align", "Center")), key=f"a_{f}")
-        with col_s: size = st.selectbox("Size", ["Small", "Medium", "Large"], index=["Small", "Medium", "Large"].index(current_fmt.get("size", "Medium")), key=f"s_{f}")
+        with col_s: size = st.selectbox("Size", ["Auto-Fit", "Small", "Medium", "Large"], index=["Auto-Fit", "Small", "Medium", "Large"].index(current_fmt.get("size", "Auto-Fit")), key=f"s_{f}")
         
         new_formats[f] = {"bold": b, "italic": i, "underline": u, "align": align, "size": size}
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
     
     if st.button("Save Display Settings"):
-        app_settings["display_fields"] = selected_fields
-        app_settings["field_formats"] = new_formats
-        save_settings(app_settings)
-        st.success("Display settings saved!")
+        with st.spinner("Saving display settings..."):
+            app_settings["display_fields"] = selected_fields
+            app_settings["field_formats"] = new_formats
+            save_settings(app_settings)
+            time.sleep(0.5)
+        st.toast("Display settings saved!", icon="✅")
+        time.sleep(1)
         st.rerun()
 
 # 2. ADD A NEW BOX
@@ -146,9 +177,12 @@ with st.sidebar.expander("➕ Add a New Box", expanded=False):
     new_rows = st.number_input("Rows (Numbers)", min_value=1, max_value=50, value=5, help="How many items deep is the box?", key="new_rows")
     if st.button("Add Box"):
         if new_box:
-            box_config[str(new_box)] = {"cols": new_cols, "rows": new_rows}
-            save_config(box_config)
-            st.success(f"Added Box {new_box}!")
+            with st.spinner(f"Creating Box {new_box}..."):
+                box_config[str(new_box)] = {"cols": new_cols, "rows": new_rows}
+                save_config(box_config)
+                time.sleep(0.5)
+            st.toast(f"Added Box {new_box}!", icon="✅")
+            time.sleep(1)
             st.rerun()
 
 # 3. EDIT OR DELETE AN EXISTING BOX
@@ -164,15 +198,21 @@ if box_config:
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Update"):
-                    box_config[selected_box] = {"cols": edit_cols, "rows": edit_rows}
-                    save_config(box_config)
-                    st.success(f"Updated Box {selected_box}!")
+                    with st.spinner("Updating box..."):
+                        box_config[selected_box] = {"cols": edit_cols, "rows": edit_rows}
+                        save_config(box_config)
+                        time.sleep(0.5)
+                    st.toast(f"Updated Box {selected_box}!", icon="✅")
+                    time.sleep(1)
                     st.rerun()
             with col2:
                 if st.button("🗑️ Delete"):
-                    del box_config[selected_box]
-                    save_config(box_config)
-                    st.success(f"Deleted Box {selected_box}!")
+                    with st.spinner("Deleting box..."):
+                        del box_config[selected_box]
+                        save_config(box_config)
+                        time.sleep(0.5)
+                    st.toast(f"Deleted Box {selected_box}!", icon="🗑️")
+                    time.sleep(1)
                     st.rerun()
 
 st.sidebar.markdown("### 📦 Current Boxes")
@@ -184,16 +224,32 @@ else:
 
 st.sidebar.markdown("---")
 if st.sidebar.button("Clear All Box Configurations"):
-    save_config({})
+    with st.spinner("Clearing all boxes..."):
+        save_config({})
+        time.sleep(0.5)
+    st.toast("All boxes cleared!", icon="🧹")
+    time.sleep(1)
     st.rerun()
 
 # --- MAIN PAGE HEADER ---
-col1, col2 = st.columns([11, 1])
+# NEW: Added the pointer at the very top left, pointing at the >> icon!
+st.markdown("<div style='color: #26a69a; font-weight: 600; margin-top: -40px; margin-bottom: 15px;'>↖️ Click the arrow icon above to open the sidebar and configure your boxes!</div>", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns([8, 2, 2])
 with col1:
     st.title(app_title)
 with col2:
     st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-    if st.button("✏️", help="Change Title"):
+    if st.button("🔄 Refresh Database", use_container_width=True):
+        with st.spinner("Fetching latest data from Koillection..."):
+            st.cache_data.clear()
+            time.sleep(0.8)
+        st.toast("Database refreshed successfully!", icon="✅")
+        time.sleep(0.5)
+        st.rerun()
+with col3:
+    st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+    if st.button("✏️ Edit Title", use_container_width=True):
         edit_title_dialog(app_title)
 
 # --- USER FRIENDLY INSTRUCTIONS ---
@@ -201,39 +257,42 @@ if "hide_instructions" not in st.session_state:
     st.session_state.hide_instructions = bool(box_config)
 
 if not st.session_state.hide_instructions:
-    st.info("""
-    **Welcome to the Locator Grid!**  
-    This tool helps you visualize your physical storage boxes and print sticker labels for them.
-    
-    ### 🛠️ Setup Instructions
-    **Step 1: Add Locations in Koillection**
-    When editing an item in Koillection, add a Data field named exactly **`Location`** or **`Other Location(s)`**.
-    
-    **Step 2: Format your Locations**
-    Type your locations using the format `Box-ColumnRow`. 
-    * Example 1: `1-A1` (Box 1, Column A, Row 1)
-    * Example 2: `Main-B4` (Box Main, Column B, Row 4)
-    
-    **Step 3: Configure your Boxes**
-    Use the **⚙️ Box Configuration** menu on the left sidebar to tell this app how big your physical boxes are. Once configured, your items will automatically appear in the grid!
-    
-    ---
-    
-    ### 🚀 Using the Locator
-    * **Customize Text:** Use the **👁️ Customize Grid Text** menu on the left to choose what information (Brand, Name, Color, etc.) is displayed on the grid and stickers. 
-        * **Reorder:** Clear the selection box and click the fields in the exact order you want them to appear.
-        * **Format:** You can apply **Bold**, *Italic*, <u>Underline</u>, change the **Alignment** (Left, Center, Right), and adjust the **Font Size** for every single field!
-    * **Visual Grid:** By default, you will see a visual representation of your boxes with item images. Use the tabs at the top to switch between different boxes.
-    * **Printable Stickers:** Select **"Sticker Grid (Printable)"** at the top of the page. This strips away the dark background and images, giving you a clean, ink-friendly table.
-    * **Download & Print:** While in the Sticker Grid view, click the **"📥 Download Box Sticker"** button to save a high-resolution PNG image of the grid, perfect for printing and attaching to the lid or inside of your physical box!
-    * **Other Locations:** If you have items with locations that don't match your configured boxes (e.g., "In Transit" or "Display Shelf"), they will automatically be grouped into their own tabs at the top of the screen.
-    """)
-    
-    _, center_col, _ = st.columns([1, 2, 1])
-    with center_col:
-        if st.button("👍 Got it! Hide Instructions", use_container_width=True):
-            st.session_state.hide_instructions = True
-            st.rerun()
+    with st.expander("ℹ️ How to use the Locator Guide", expanded=True):
+        st.markdown("""
+        **Welcome to the Locator Grid!**  
+        This tool helps you visualize your physical storage boxes and print sticker labels for them.
+        
+        ### 🛠️ Setup Instructions
+        **Step 1: Add Locations in Koillection**
+        When editing an item in Koillection, add a Data field named exactly **`Location`** or **`Other Location(s)`**.
+        
+        **Step 2: Format your Locations**
+        Type your locations using the format `Box-ColumnRow`. 
+        * Example 1: `1-A1` (Box 1, Column A, Row 1)
+        * Example 2: `Main-B4` (Box Main, Column B, Row 4)
+        * Example 3: `Display Shelf` (Simple text locations will automatically get their own tab!)
+        
+        **Step 3: Configure your Boxes**
+        Use the **⚙️ Box Configuration** menu on the left sidebar to tell this app how big your physical boxes are. Once configured, your items will automatically appear in the grid!
+        
+        ---
+        
+        ### 🚀 Using the Locator
+        * **Customize Text:** Use the **👁️ Customize Grid Text** menu on the left to choose what information (Brand, Name, Color, etc.) is displayed on the grid and stickers. 
+            * **Auto-Fit:** By default, the text size is set to "Auto-Fit". The app will automatically calculate the absolute largest font size possible to make your text fill the cell without overflowing!
+            * **Format:** You can apply **Bold**, *Italic*, <u>Underline</u>, and change the **Alignment** (Left, Center, Right) for every single field!
+        * **Visual Grid:** By default, you will see a visual representation of your boxes with item images. Use the tabs at the top to switch between different boxes.
+        * **Printable Stickers:** Select **"Sticker Grid (Printable)"** at the top of the page. This strips away the dark background and images, giving you a clean, ink-friendly table.
+        * **Download & Print:** While in the Sticker Grid view, click the **"📥 Download Box Sticker"** button to save a high-resolution PNG image of the grid, perfect for printing and attaching to the lid or inside of your physical box!
+        * **Other Locations:** If you have items with locations that don't match your configured boxes (e.g., "In Transit" or "Display Shelf"), they will automatically be grouped into their own tabs at the top of the screen.
+        """)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        _, center_col, _ = st.columns([1, 2, 1])
+        with center_col:
+            if st.button("👍 Got it! Hide Instructions", use_container_width=True):
+                st.session_state.hide_instructions = True
+                st.rerun()
 else:
     if st.button("ℹ️ Show Instructions"):
         st.session_state.hide_instructions = False
@@ -264,7 +323,7 @@ for b_name, b_dims in box_config.items():
 pattern = re.compile(r'^([a-zA-Z0-9]+)-([a-zA-Z])(\d+)$', re.IGNORECASE)
 
 for item in items_data.values():
-    raw_loc = item['location'] if item['location'] else "Unassigned"
+    raw_loc = item['location'].strip() if item['location'] else "Unassigned"
     locations = [l.strip() for l in raw_loc.split(',')]
     
     for loc in locations:
@@ -288,9 +347,8 @@ for item in items_data.values():
 # --- UI GENERATION ---
 view_mode = st.radio("Select Grid View:", ["Visual Grid (Images)", "Sticker Grid (Printable)"], horizontal=True)
 
-# CSS Size Mappings for HTML
-html_size_map = {"Small": "9px", "Medium": "11px", "Large": "14px"}
-print_size_map = {"Small": "8px", "Medium": "10px", "Large": "12px"}
+html_size_map = {"Small": "9px", "Medium": "11px", "Large": "14px", "Auto-Fit": "12px"}
+print_size_map = {"Small": 20, "Medium": 28, "Large": 36}
 
 def get_html_grid(box_num, box_data):
     dims = box_config[box_num]
@@ -319,7 +377,7 @@ def get_html_grid(box_num, box_data):
                         fs = "italic" if fmt.get("italic") else "normal"
                         td = "underline" if fmt.get("underline") else "none"
                         ta = fmt.get("align", "Center").lower()
-                        fz = html_size_map.get(fmt.get("size", "Medium"))
+                        fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
                         
                         text_html += f"<div style='font-size: {fz}; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color:white; text-shadow: 1px 1px 2px black; width: 100%;'>{val}</div>"
                 
@@ -360,7 +418,7 @@ def get_sticker_html_grid(box_num, box_data):
                         fs = "italic" if fmt.get("italic") else "normal"
                         td = "underline" if fmt.get("underline") else "none"
                         ta = fmt.get("align", "Center").lower()
-                        fz = print_size_map.get(fmt.get("size", "Medium"))
+                        fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
                         
                         html += f"<div style='font-size: {fz}; margin-top: 3px; word-wrap: break-word; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta};'>{val}</div>"
             
@@ -369,27 +427,33 @@ def get_sticker_html_grid(box_num, box_data):
     html += "</table></div>"
     return html
 
-def get_text_dims(draw, text, font):
-    try:
-        bbox = draw.multiline_textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
-    except AttributeError:
-        return draw.textsize(text, font=font)
+def wrap_text_pil(text, font, max_width, draw):
+    words = text.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        test_line = current_line + word + " "
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        if (bbox[2] - bbox[0]) <= max_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line.strip())
+            current_line = word + " "
+    if current_line:
+        lines.append(current_line.strip())
+    return lines
 
-def get_font(is_bold, is_italic, size_str):
-    # Map string sizes to actual pixel sizes for the PNG
-    size_map = {"Small": 20, "Medium": 28, "Large": 36}
-    size = size_map.get(size_str, 28)
-    
+def get_font(is_bold, is_italic, size):
     try:
         if is_bold and is_italic:
-            return ImageFont.truetype("arialbi.ttf", size)
+            return ImageFont.truetype("/app/Roboto-BoldItalic.ttf", size)
         elif is_bold:
-            return ImageFont.truetype("arialbd.ttf", size)
+            return ImageFont.truetype("/app/Roboto-Bold.ttf", size)
         elif is_italic:
-            return ImageFont.truetype("ariali.ttf", size)
+            return ImageFont.truetype("/app/Roboto-Italic.ttf", size)
         else:
-            return ImageFont.truetype("arial.ttf", size)
+            return ImageFont.truetype("/app/Roboto-Regular.ttf", size)
     except:
         return ImageFont.load_default()
 
@@ -411,16 +475,17 @@ def get_sticker_image_bytes(box_num, box_data):
     draw = ImageDraw.Draw(img)
     
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 80)
-        font_header = ImageFont.truetype("arialbd.ttf", 60)
-        font_cell_id = ImageFont.truetype("arialbd.ttf", 40)
+        font_title = ImageFont.truetype("/app/Roboto-Bold.ttf", 80)
+        font_header = ImageFont.truetype("/app/Roboto-Bold.ttf", 60)
+        font_cell_id = ImageFont.truetype("/app/Roboto-Bold.ttf", 40)
     except:
         font_title = ImageFont.load_default()
         font_header = ImageFont.load_default()
         font_cell_id = ImageFont.load_default()
 
     title_text = f"Box {box_num}"
-    tw, th = get_text_dims(draw, title_text, font_title)
+    bbox = draw.textbbox((0, 0), title_text, font=font_title)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((w - tw) / 2, (title_area - th) / 2), title_text, font=font_title, fill="black")
 
     teal = "#008080"
@@ -432,7 +497,8 @@ def get_sticker_image_bytes(box_num, box_data):
         draw.line([(x, title_area), (x, h)], fill="black", width=4)
         if i < num_cols:
             txt = cols[i]
-            tw, th = get_text_dims(draw, txt, font_header)
+            bbox = draw.textbbox((0, 0), txt, font=font_header)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             draw.text((x + (cell_w - tw)/2, title_area + (header_row_h - th)/2), txt, font=font_header, fill="white")
             
     for i in range(rows + 1):
@@ -440,7 +506,8 @@ def get_sticker_image_bytes(box_num, box_data):
         draw.line([(0, y), (w, y)], fill="black", width=4)
         if i < rows:
             txt = str(i + 1)
-            tw, th = get_text_dims(draw, txt, font_header)
+            bbox = draw.textbbox((0, 0), txt, font=font_header)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             draw.text(((header_col_w - tw)/2, y + (cell_h - th)/2), txt, font=font_header, fill="white")
 
     for r in range(1, rows + 1):
@@ -452,41 +519,68 @@ def get_sticker_image_bytes(box_num, box_data):
             draw.text((x0 + 10, y0 + 10), f"{c}{r}", font=font_cell_id, fill="black")
             
             if item:
+                max_w = cell_w - 20
+                max_h = cell_h - 70 
+                
+                auto_size = 40
+                while auto_size > 10:
+                    total_h = 0
+                    for f in display_fields:
+                        val = item['name'] if f == "Name" else item['fields'].get(f, "")
+                        if not val: continue
+                        
+                        fmt = field_formats.get(f, {})
+                        test_size_str = fmt.get("size", "Auto-Fit")
+                        test_size = auto_size if test_size_str == "Auto-Fit" else print_size_map.get(test_size_str, 28)
+                        
+                        font = get_font(fmt.get("bold", False), fmt.get("italic", False), test_size)
+                        lines = wrap_text_pil(val, font, max_w, draw)
+                        
+                        for line in lines:
+                            bbox = draw.textbbox((0, 0), line, font=font)
+                            total_h += (bbox[3] - bbox[1]) + 4
+                        total_h += 4 
+                        
+                    if total_h <= max_h:
+                        break 
+                    auto_size -= 2
+                
                 y_text = y0 + 60
                 for f in display_fields:
                     val = item['name'] if f == "Name" else item['fields'].get(f, "")
-                    if val:
-                        fmt = field_formats.get(f, {})
-                        is_bold = fmt.get("bold", False)
-                        is_italic = fmt.get("italic", False)
-                        is_underline = fmt.get("underline", False)
-                        align = fmt.get("align", "Center")
-                        size_str = fmt.get("size", "Medium")
+                    if not val: continue
+                    
+                    fmt = field_formats.get(f, {})
+                    is_bold = fmt.get("bold", False)
+                    is_italic = fmt.get("italic", False)
+                    is_underline = fmt.get("underline", False)
+                    align = fmt.get("align", "Center")
+                    size_str = fmt.get("size", "Auto-Fit")
+                    
+                    final_size = auto_size if size_str == "Auto-Fit" else print_size_map.get(size_str, 28)
+                    font_text = get_font(is_bold, is_italic, final_size)
+                    
+                    lines = wrap_text_pil(val, font_text, max_w, draw)
+                    
+                    for line in lines:
+                        bbox = draw.textbbox((0, 0), line, font=font_text)
+                        tw = bbox[2] - bbox[0]
+                        th = bbox[3] - bbox[1]
                         
-                        font_text = get_font(is_bold, is_italic, size_str)
+                        if align == "Left":
+                            x_draw = x0 + 10
+                        elif align == "Right":
+                            x_draw = x0 + cell_w - tw - 10
+                        else: 
+                            x_draw = x0 + (cell_w - tw) / 2
+                            
+                        draw.text((x_draw, y_text), line, font=font_text, fill="black")
                         
-                        # Wrap text based on font size
-                        wrap_width = 11 if size_str == "Medium" else (14 if size_str == "Small" else 8)
-                        lines = textwrap.wrap(val, width=wrap_width)
+                        if is_underline:
+                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill="black", width=2)
                         
-                        for line in lines:
-                            tw, th = get_text_dims(draw, line, font_text)
-                            
-                            # Calculate X position based on alignment
-                            if align == "Left":
-                                x_draw = x0 + 10
-                            elif align == "Right":
-                                x_draw = x0 + cell_w - tw - 10
-                            else: # Center
-                                x_draw = x0 + (cell_w - tw) / 2
-                                
-                            draw.text((x_draw, y_text), line, font=font_text, fill="black")
-                            
-                            if is_underline:
-                                draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill="black", width=2)
-                            
-                            y_text += th + 4
-                        y_text += 4 # Extra spacing between different fields
+                        y_text += th + 4
+                    y_text += 4
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
