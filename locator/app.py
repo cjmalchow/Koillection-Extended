@@ -80,39 +80,46 @@ def edit_title_dialog(current_title):
         st.rerun()
 
 # --- DATABASE CONNECTION & DATA PROCESSING ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=0)
 def load_data():
+    # Pointing directly to MySQL where your data actually lives
     db_url = "mysql+pymysql://root:password@mysql:3306/koillection"
     conn = st.connection("koillection_db", type="sql", url=db_url)
+    
     query = """
     SELECT i.id, i.name, i.image, d.label, d.value
     FROM koi_item i
     LEFT JOIN koi_datum d ON i.id = d.item_id;
     """
-    return conn.query(query)
+    return conn.query(query, ttl=0)
 
 df = load_data()
 
 items_data = {}
 all_custom_fields = set()
 
+# Let Python do the filtering so we don't rely on strict SQL syntax
 for _, row in df.iterrows():
-    iid = row['id']
+    iid = str(row['id'])
     if iid not in items_data:
-        items_data[iid] = {"name": row['name'], "image": row['image'], "location": "", "fields": {}}
+        items_data[iid] = {"name": str(row['name']), "image": row['image'], "location": "", "fields": {}}
     
     lbl = row['label']
     val = row['value']
     
     if pd.notna(lbl) and pd.notna(val):
-        if lbl.lower() in ['location', 'other location(s)']:
+        lbl_str = str(lbl).strip()
+        val_str = str(val).strip()
+        
+        # Case-insensitive check for the word "location"
+        if 'location' in lbl_str.lower():
             if items_data[iid]["location"]:
-                items_data[iid]["location"] += f", {val}"
+                items_data[iid]["location"] += f", {val_str}"
             else:
-                items_data[iid]["location"] = str(val)
+                items_data[iid]["location"] = val_str
         else:
-            items_data[iid]["fields"][lbl] = str(val)
-            all_custom_fields.add(lbl)
+            items_data[iid]["fields"][lbl_str] = val_str
+            all_custom_fields.add(lbl_str)
 
 available_fields = ["Name"] + sorted(list(all_custom_fields))
 
@@ -232,7 +239,6 @@ if st.sidebar.button("Clear All Box Configurations"):
     st.rerun()
 
 # --- MAIN PAGE HEADER ---
-# NEW: Added the pointer at the very top left, pointing at the >> icon!
 st.markdown("<div style='color: #26a69a; font-weight: 600; margin-top: -40px; margin-bottom: 15px;'>↖️ Click the arrow icon above to open the sidebar and configure your boxes!</div>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([8, 2, 2])
@@ -590,7 +596,7 @@ def get_sticker_image_bytes(box_num, box_data):
 if not box_config:
     st.info("👈 Please configure your box sizes in the sidebar to get started!")
 elif df.empty:
-    st.warning("⚠️ No items found with a 'Location' field! Go to Koillection and add a Data field named 'Location' to your items.")
+    st.warning("⚠️ No items found in the database! Add some items in Koillection to get started.")
 else:
     all_tabs = [f"Box {b}" for b in sorted(boxes.keys())] + sorted(list(other_containers.keys()))
     if all_tabs:
