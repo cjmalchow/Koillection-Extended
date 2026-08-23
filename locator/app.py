@@ -82,17 +82,16 @@ def edit_title_dialog(current_title):
 # --- DATABASE CONNECTION & DATA PROCESSING ---
 @st.cache_data(ttl=0)
 def load_data():
-    # Pointing directly to MySQL where your data actually lives
-    db_url = "mysql+pymysql://root:password@mysql:3306/koillection"
+    db_url = "postgresql://postgres:password@postgresql:5432/koillection"
     conn = st.connection("koillection_db", type="sql", url=db_url)
     
+    # BULLETPROOF QUERY: Fetch everything!
     query = """
-    SELECT i.id, i.name, i.image, d.label, d.value
+    SELECT i.id::text AS id, i.name, i.image, d.label, d.value
     FROM koi_item i
     LEFT JOIN koi_datum d ON i.id = d.item_id;
     """
     return conn.query(query, ttl=0)
-
 df = load_data()
 
 items_data = {}

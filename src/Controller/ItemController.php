@@ -289,9 +289,9 @@ class ItemController extends AbstractController
 
         return new JsonResponse(['status' => 'ok']);
     }
-#[Route('/locator', name: 'app_locator', methods: ['GET'])]
-    public function locator(): Response
+#[Route('/color-tracker', name: 'app_color_tracker', methods: ['GET'])]
+    public function colorTracker(): Response
     {
-        return $this->render('App/locator.html.twig');
+        return $this->render('App/color_tracker.html.twig');
     }
-}
+    }
