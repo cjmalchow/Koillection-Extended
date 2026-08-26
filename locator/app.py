@@ -55,7 +55,7 @@ def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r") as f:
             return json.load(f)
-    return {"title": "💅 Nail Polish Inventory Grid", "display_fields": ["Name"], "field_formats": {}}
+    return {"title": "💅 Storage Grid Visualizer", "display_fields": ["Name"], "field_formats": {}}
 
 def save_settings(settings):
     with open(SETTINGS_FILE, "w") as f:
@@ -63,7 +63,7 @@ def save_settings(settings):
 
 box_config = load_config()
 app_settings = load_settings()
-app_title = app_settings.get("title", "💅 Nail Polish Inventory Grid")
+app_title = app_settings.get("title", "💅 Storage Grid Visualizer")
 display_fields = app_settings.get("display_fields", ["Name"])
 field_formats = app_settings.get("field_formats", {})
 

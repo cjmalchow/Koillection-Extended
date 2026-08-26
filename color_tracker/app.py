@@ -10,7 +10,7 @@ from sqlalchemy import text
 from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-st.set_page_config(page_title="Nail Polish Color Tracker", page_icon="💅", layout="wide")
+st.set_page_config(page_title="Smart Color Matcher", page_icon="💅", layout="wide")
 
 # ==========================================
 # ⚙️ DATABASE CONFIGURATION (POSTGRESQL)
@@ -170,7 +170,7 @@ def get_pil_image(img_path):
         return None
 
 # --- APP SETUP ---
-st.title("💅 Nail Polish Color Tracker")
+st.title("💅 Smart Color Matcher")
 
 # Inject CSS for Lightbox and Badges
 st.markdown("""

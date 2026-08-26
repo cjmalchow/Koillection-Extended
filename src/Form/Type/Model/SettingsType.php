@@ -62,7 +62,7 @@ class SettingsType extends AbstractType
             ])
             ->add('locatorFeatureEnabled', CheckboxType::class, [
             'required' => false,
-            'label' => 'Enable Locator Grid feature',
+            'label' => 'Enable Storage Grid feature',
             ])
             ->add('tagsFeatureEnabled', CheckboxType::class, [
                 'required' => false,

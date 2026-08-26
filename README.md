@@ -15,26 +15,33 @@
     <img src="https://img.shields.io/badge/mysql->=8.0-blue" />
 <p>
 
-# 💅 Koillection (Nail Polish Edition)
+# 💅 Koillection: The Ultimate Nail Polish Vault
 
-*This is a highly customized fork of the original [Koillection](https://github.com/benjaminjonard/koillection) app. It has been specifically tailored to make managing a large nail polish collection easier by introducing bulk editing tools and a custom-built, Python-powered physical location tracker.*
+*This is a highly customized, full-stack fork of the original [Koillection](https://github.com/benjaminjonard/koillection) app. It has been specifically engineered for nail polish collectors, integrating custom Python-powered tools to track physical storage, extract exact color hex codes from photos, and find color dupes.*
 
-### ✨ Custom Features in this Version:
+## ✨ Exclusive Nail Polish Features
 
-#### 1. The Locator App (Streamlit Integration)
-A dedicated visual grid and sticker generator to track the physical location of your items.
-* **Visual & Printable Grids:** View your collection in a digital grid with images, or generate clean, ink-friendly printable stickers for your physical storage boxes.
-* **Dynamic Box Sizing:** Configure custom box sizes (columns and rows) directly from the sidebar.
-* **Customizable Text:** Choose exactly which data fields (Name, Brand, Finish, etc.) appear on your grid.
-* **Auto-Fit & Formatting:** Text automatically scales to fit perfectly inside the grid cells. You can also apply Bold, Italic, Underline, and Alignment settings to individual fields.
-* **Unassigned & Custom Locations:** Items without a standard box location (e.g., "Display Shelf" or unassigned items) are automatically grouped into their own dedicated tabs.
-* **Settings Integration:** The Locator App can be turned on or off directly from the native Koillection User Settings page.
+### 🗺️ 1. Storage Grid Visualizer & Sticker Generator
+*Never lose a bottle again. This tool maps your physical storage boxes into a digital grid and generates printable labels.*
+* **How to use:** 
+  1. In Koillection, add a Data field named **`Location`** (or `Other Location(s)`) to your items.
+  2. Use the format `Box-ColumnRow` (e.g., `1-A1` or `Helmer-B4`). Simple text like `Display Shelf` will automatically get its own list!
+  3. Open the **Locator Grid** from the sidebar.
+  4. Use the ⚙️ **Box Configuration** menu to set how many columns/rows your physical boxes have.
+  5. Switch to **Sticker Grid (Printable)** to download high-res, auto-fitting PNG labels for your box lids!
 
-#### 2. Bulk Actions (List View)
-* **Multi-Select:** Added checkboxes to the main item list view to select multiple items at once.
-* **Bulk Duplicate:** Instantly clone one or multiple items (perfect for quickly adding similar polishes to your database!).
-* **Bulk Move:** A new dropdown menu and button to quickly move multiple selected items to a different collection.
-* **Bulk Delete:** Permanently delete multiple items at once.
+### 🎨 2. Smart Color Matcher & Tagger
+*Turn your collection into a searchable color palette. Extract exact hex codes from your photos and search for dupes.*
+* **How to use:**
+  1. Open the **Color Tracker** from the sidebar and select a collection.
+  2. Go to the **🏷️ Tag Existing Polish** tab. Click directly on your polish's photo to extract the exact Primary (and Secondary) color hex codes. Click **Save**.
+  3. Go to the **🔍 Search Collection** tab. Pick a target color from the color wheel and adjust the **Tolerance Radius** slider to instantly find exact matches or similar shades in your vault!
+
+### ⚡ 3. Bulk Actions (List View)
+*Manage massive hauls with ease using the new action bar.*
+* **Multi-Select:** Checkboxes added to the main list view.
+* **Bulk Duplicate:** Instantly clone items (perfect for adding entire collections from the same brand).
+* **Bulk Move & Delete:** Quickly reorganize or clean up your database.
 
 ---
 
