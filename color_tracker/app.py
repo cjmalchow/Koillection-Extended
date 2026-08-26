@@ -16,7 +16,7 @@ st.set_page_config(page_title="Nail Polish Color Tracker", page_icon="💅", lay
 # ⚙️ DATABASE CONFIGURATION (POSTGRESQL)
 # ==========================================
 DB_URL = "postgresql://postgres:password@postgresql:5432/koillection"
-KOILLECTION_WEB_URL = "http://localhost:8081" 
+KOILLECTION_WEB_URL = "http://10.0.0.207:8144" 
 IMAGE_DIR = "/app/public/uploads"
 
 FINISH_OPTIONS = [

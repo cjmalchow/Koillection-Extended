@@ -252,6 +252,7 @@ class ItemController extends AbstractController
         return new JsonResponse(['status' => 'ok']);
     }
 
+    // MAGIC FIX: Changed the URL to avoid the 404 Routing Collision!
     #[Route('/items/custom/collections-list', name: 'app_collection_simple_list', methods: ['GET'])]
     public function simpleCollectionList(CollectionRepository $collectionRepository): JsonResponse
     {
@@ -288,20 +289,9 @@ class ItemController extends AbstractController
 
         return new JsonResponse(['status' => 'ok']);
     }
-
-    // ==========================================
-    // CUSTOM PYTHON APPS
-    // ==========================================
-
-    #[Route('/locator', name: 'app_locator', methods: ['GET'])]
-    public function locator(): Response
-    {
-        return $this->render('App/locator.html.twig');
-    }
-
-    #[Route('/color-tracker', name: 'app_color_tracker', methods: ['GET'])]
+#[Route('/color-tracker', name: 'app_color_tracker', methods: ['GET'])]
     public function colorTracker(): Response
     {
         return $this->render('App/color_tracker.html.twig');
     }
-}
+    }

@@ -23,6 +23,15 @@
     </div>
 
     <div class="content-block" style="padding: 0; overflow: hidden; height: 75vh; border-radius: 4px; box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14);">
-        <iframe src="http://localhost:8501" width="100%" height="100%" style="border: none;"></iframe>
+        <!-- Removed the hardcoded src, JS will fill it in! -->
+        <iframe id="locator-iframe" width="100%" height="100%" style="border: none;"></iframe>
     </div>
+
+    <!-- MAGIC FIX: Dynamically grab the server's IP address! -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const host = window.location.hostname;
+            document.getElementById('locator-iframe').src = "http://" + host + ":8501";
+        });
+    </script>
 {% endblock %}
