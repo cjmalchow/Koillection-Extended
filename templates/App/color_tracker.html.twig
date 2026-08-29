@@ -22,8 +22,20 @@
     </div>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            const host = window.location.hostname;
-            document.getElementById('color-tracker-iframe').src = "http://" + host + ":8503";
+            const currentHost = window.location.hostname;
+            const currentPort = window.location.port;
+            
+            // Default to the Sandbox Color Matcher port
+            let colorPort = '8503'; 
+            
+            // If the browser sees we are on the Production Koillection port (8144),
+            // switch to the Production Color Matcher port (8504)!
+            if (currentPort === '8144') {
+                colorPort = '8504';
+            }
+            
+            // Build the final URL and inject it into the iframe
+            document.getElementById('color-tracker-iframe').src = "http://" + currentHost + ":" + colorPort;
         });
     </script>
 {% endblock %}

@@ -23,8 +23,20 @@
     </div>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            const host = window.location.hostname;
-            document.getElementById('locator-iframe').src = "http://" + host + ":8501";
+            const currentHost = window.location.hostname;
+            const currentPort = window.location.port;
+            
+            // Default to the Sandbox Grid Visualizer port
+            let gridPort = '8501'; 
+            
+            // If the browser sees we are on the Production Koillection port (8144),
+            // switch to the Production Grid Visualizer port (8502)!
+            if (currentPort === '8144') {
+                gridPort = '8502';
+            }
+            
+            // Build the final URL and inject it into the iframe
+            document.getElementById('locator-iframe').src = "http://" + currentHost + ":" + gridPort;
         });
     </script>
 {% endblock %}
