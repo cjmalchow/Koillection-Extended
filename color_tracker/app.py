@@ -15,7 +15,8 @@ st.set_page_config(page_title="Smart Color Matcher", page_icon="💅", layout="w
 # ==========================================
 # ⚙️ DATABASE CONFIGURATION (POSTGRESQL)
 # ==========================================
-DB_URL = "postgresql://postgres:password@postgresql:5432/koillection"
+# This will use the Production URL if it exists in docker-compose, otherwise it defaults to the Sandbox URL!
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@postgresql:5432/koillection")
 KOILLECTION_WEB_URL = "http://10.0.0.207:8144" 
 IMAGE_DIR = "/app/public/uploads"
 

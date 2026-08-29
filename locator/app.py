@@ -126,7 +126,8 @@ sticker_settings = app_settings.get("sticker_settings", {})
 # --- DATABASE CONNECTION & DATA PROCESSING ---
 @st.cache_data(ttl=0, show_spinner="🔄 Fetching latest items from Koillection...")
 def load_data():
-    db_url = "postgresql://postgres:password@postgresql:5432/koillection"
+    # This will use the Production URL if it exists, otherwise it defaults to the Sandbox URL!
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:password@postgresql:5432/koillection")
     conn = st.connection("koillection_db", type="sql", url=db_url)
     
     query = """
@@ -472,11 +473,17 @@ def get_image_base64(img_path):
 boxes = {}
 other_containers = {}
 
+# Create a mapping for case-insensitive box name lookups
+box_name_map = {}
+
 for b_name, b_dims in box_config.items():
     cols_str = "".join([chr(65 + i) for i in range(b_dims['cols'])])
     boxes[b_name] = {r: {c: None for c in cols_str} for r in range(1, b_dims['rows'] + 1)}
+    # Store a lowercase version of the box name so we can match it easily
+    box_name_map[str(b_name).strip().lower()] = b_name
 
-pattern = re.compile(r'^([a-zA-Z0-9]+)-([a-zA-Z])(\d+)$', re.IGNORECASE)
+# NEW FORGIVING REGEX: Allows spaces around the hyphen and inside the box name!
+pattern = re.compile(r'^\s*([a-zA-Z0-9\s]+?)\s*-\s*([a-zA-Z])\s*(\d+)\s*$', re.IGNORECASE)
 
 for item in items_data.values():
     raw_loc = item['location'].strip() if item['location'] else "Unassigned"
@@ -487,19 +494,30 @@ for item in items_data.values():
         match = pattern.match(loc)
         
         if match:
-            box_num = str(match.group(1))
+            # Clean up the extracted text
+            parsed_box_name = str(match.group(1)).strip().lower()
             col = match.group(2).upper()
             row_num = int(match.group(3))
             
-            if box_num in boxes and row_num in boxes[box_num] and col in boxes[box_num][row_num]:
-                boxes[box_num][row_num][col] = item
+            # 1. Check if the box exists (case-insensitive)
+            if parsed_box_name in box_name_map:
+                actual_box_name = box_name_map[parsed_box_name]
+                
+                # 2. Check if the Row and Column actually exist inside this box's dimensions
+                if row_num in boxes[actual_box_name] and col in boxes[actual_box_name][row_num]:
+                    boxes[actual_box_name][row_num][col] = item
+                else:
+                    # The box exists, but the coordinates are out of bounds!
+                    if loc not in other_containers: other_containers[loc] = []
+                    other_containers[loc].append(item)
             else:
+                # The box name doesn't match any configured boxes
                 if loc not in other_containers: other_containers[loc] = []
                 other_containers[loc].append(item)
         else:
+            # The text didn't match the Box-A1 format at all
             if loc not in other_containers: other_containers[loc] = []
             other_containers[loc].append(item)
-
 # --- UI GENERATION ---
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Visual Grid (Images)"
