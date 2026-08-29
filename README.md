@@ -22,26 +22,24 @@
 ## ✨ Exclusive Nail Polish Features
 
 ### 🗺️ 1. Storage Grid Visualizer & Sticker Generator
-*Never lose a bottle again. This tool maps your physical storage boxes into a digital grid and generates printable labels.*
-* **How to use:** 
-  1. In Koillection, add a Data field named **`Location`** (or `Other Location(s)`) to your items.
-  2. Use the format `Box-ColumnRow` (e.g., `1-A1` or `Helmer-B4`). Simple text like `Display Shelf` will automatically get its own list!
-  3. Open the **Locator Grid** from the sidebar.
-  4. Use the ⚙️ **Box Configuration** menu to set how many columns/rows your physical boxes have.
-  5. Switch to **Sticker Grid (Printable)** to download high-res, auto-fitting PNG labels for your box lids!
+*Never lose a bottle again. This custom Python/Streamlit app maps your physical storage boxes into a digital grid and generates highly customizable, printable labels.*
+* **Dynamic Digital Grid:** Automatically places your polishes into a visual grid based on their `Location` data field (e.g., `1-A1`). Simple text locations (like `Display Shelf`) automatically get their own lists!
+* **Printable Box Stickers:** Generates high-resolution, ink-friendly PNG labels designed to be printed and taped to the inside or outside of your physical boxes.
+* **Ultimate Customization:** Choose from dozens of decorative Google Fonts (like Lobster, Caveat, and Great Vibes), adjust text alignment, and customize all colors (background, grid lines, and text) via a dedicated pop-up UI.
+* **Smart Auto-Fitting:** The sticker heading automatically calculates and scales its font size to perfectly fill the available banner space.
+* **Blackout Spaces:** Have a physically broken slot or a structural divider in your drawer? Mark specific coordinates as "Unusable" to black them out on the digital grid and sticker.
 
 ### 🎨 2. Smart Color Matcher & Tagger
-*Turn your collection into a searchable color palette. Extract exact hex codes from your photos and search for dupes.*
-* **How to use:**
-  1. Open the **Color Tracker** from the sidebar and select a collection.
-  2. Go to the **🏷️ Tag Existing Polish** tab. Click directly on your polish's photo to extract the exact Primary (and Secondary) color hex codes. Click **Save**.
-  3. Go to the **🔍 Search Collection** tab. Pick a target color from the color wheel and adjust the **Tolerance Radius** slider to instantly find exact matches or similar shades in your vault!
+*Turn your collection into a searchable color palette. This embedded Streamlit app extracts exact hex codes from your photos and searches for dupes.*
+* **Point-and-Click Extraction:** Go to the **🏷️ Tag Existing Polish** tab, click directly on a polish's uploaded photo, and instantly extract the exact Primary (and Secondary) color hex codes.
+* **Direct Database Integration:** Saves the extracted hex codes directly to your PostgreSQL database, ensuring your data is always in sync with the core app.
+* **Dupe Finder:** Go to the **🔍 Search Collection** tab, pick a target color from a color wheel, and adjust the **Tolerance Radius** slider. The app will instantly search your entire vault to find exact matches or similar shades!
 
 ### ⚡ 3. Bulk Actions (List View)
-*Manage massive hauls with ease using the new action bar.*
-* **Multi-Select:** Checkboxes added to the main list view.
-* **Bulk Duplicate:** Instantly clone items (perfect for adding entire collections from the same brand).
-* **Bulk Move & Delete:** Quickly reorganize or clean up your database.
+*Manage massive hauls with ease using the custom action bar integrated directly into the PHP/Twig core.*
+* **Multi-Select:** Convenient checkboxes added to the main list view.
+* **Bulk Duplicate:** Instantly clone multiple items at once. This is a lifesaver when adding an entire 10-piece collection from the same brand where only the name and color change!
+* **Bulk Move & Delete:** Quickly reorganize your vault or clean up your database with a single click.
 
 ---
 
