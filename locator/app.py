@@ -14,23 +14,73 @@ from PIL import Image, ImageDraw, ImageFont
 st.set_page_config(page_title="Nail Polish Locator", layout="wide")
 
 # --- FONT DOWNLOADER ---
-@st.cache_resource
+@st.cache_resource(show_spinner="📥 Downloading Google Fonts...")
 def ensure_fonts():
-    base_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/static/"
-    fonts = {
-        "Roboto-Regular.ttf": base_url + "Roboto-Regular.ttf",
-        "Roboto-Bold.ttf": base_url + "Roboto-Bold.ttf",
-        "Roboto-Italic.ttf": base_url + "Roboto-Italic.ttf",
-        "Roboto-BoldItalic.ttf": base_url + "Roboto-BoldItalic.ttf"
+    fonts_to_download = {
+        "Roboto-Regular.ttf": ("Roboto", "400", False),
+        "Roboto-Bold.ttf": ("Roboto", "700", False),
+        "Roboto-Italic.ttf": ("Roboto", "400", True),
+        "Roboto-BoldItalic.ttf": ("Roboto", "700", True),
+        "Montserrat-Regular.ttf": ("Montserrat", "400", False),
+        "Montserrat-Bold.ttf": ("Montserrat", "700", False),
+        "Montserrat-Italic.ttf": ("Montserrat", "400", True),
+        "Montserrat-BoldItalic.ttf": ("Montserrat", "700", True),
+        "Oswald-Regular.ttf": ("Oswald", "400", False),
+        "Oswald-Bold.ttf": ("Oswald", "700", False),
+        "DancingScript-Regular.ttf": ("Dancing Script", "400", False),
+        "DancingScript-Bold.ttf": ("Dancing Script", "700", False),
+        "OpenSans-Regular.ttf": ("Open Sans", "400", False),
+        "OpenSans-Bold.ttf": ("Open Sans", "700", False),
+        "OpenSans-Italic.ttf": ("Open Sans", "400", True),
+        "OpenSans-BoldItalic.ttf": ("Open Sans", "700", True),
+        "Lato-Regular.ttf": ("Lato", "400", False),
+        "Lato-Bold.ttf": ("Lato", "700", False),
+        "Lato-Italic.ttf": ("Lato", "400", True),
+        "Lato-BoldItalic.ttf": ("Lato", "700", True),
+        "Merriweather-Regular.ttf": ("Merriweather", "400", False),
+        "Merriweather-Bold.ttf": ("Merriweather", "700", False),
+        "Merriweather-Italic.ttf": ("Merriweather", "400", True),
+        "Merriweather-BoldItalic.ttf": ("Merriweather", "700", True),
+        "PlayfairDisplay-Regular.ttf": ("Playfair Display", "400", False),
+        "PlayfairDisplay-Bold.ttf": ("Playfair Display", "700", False),
+        "PlayfairDisplay-Italic.ttf": ("Playfair Display", "400", True),
+        "PlayfairDisplay-BoldItalic.ttf": ("Playfair Display", "700", True),
+        "Pacifico-Regular.ttf": ("Pacifico", "400", False),
+        "Lobster-Regular.ttf": ("Lobster", "400", False),
+        "Caveat-Regular.ttf": ("Caveat", "400", False),
+        "Caveat-Bold.ttf": ("Caveat", "700", False),
+        "AmaticSC-Regular.ttf": ("Amatic SC", "400", False),
+        "AmaticSC-Bold.ttf": ("Amatic SC", "700", False),
+        "Cinzel-Regular.ttf": ("Cinzel", "400", False),
+        "Cinzel-Bold.ttf": ("Cinzel", "700", False),
+        "GreatVibes-Regular.ttf": ("Great Vibes", "400", False),
+        "BebasNeue-Regular.ttf": ("Bebas Neue", "400", False),
     }
+    
     errors = []
-    for f_name, url in fonts.items():
+    ua = 'Mozilla/5.0 (Linux; U; Android 4.1.1; en-gb; Build/KLP) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Safari/534.30'
+    
+    for f_name, (family, weight, is_italic) in fonts_to_download.items():
         f_path = os.path.join("/app", f_name)
         if not os.path.exists(f_path) or os.path.getsize(f_path) < 10000:
             try:
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=10) as response, open(f_path, 'wb') as out_file:
-                    out_file.write(response.read())
+                family_fmt = family.replace(" ", "+")
+                ital_str = "1" if is_italic else "0"
+                css_url = f"https://fonts.googleapis.com/css2?family={family_fmt}:ital,wght@{ital_str},{weight}"
+                
+                req_css = urllib.request.Request(css_url, headers={'User-Agent': ua})
+                with urllib.request.urlopen(req_css, timeout=10) as response:
+                    css = response.read().decode('utf-8')
+                
+                match = re.search(r'url\([\'"]?(https://[^\'")]+\.ttf)[\'"]?\)', css, re.IGNORECASE)
+                
+                if match:
+                    ttf_url = match.group(1)
+                    req_ttf = urllib.request.Request(ttf_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req_ttf, timeout=10) as response_ttf, open(f_path, 'wb') as out_file:
+                        out_file.write(response_ttf.read())
+                else:
+                    errors.append(f"{f_name}: Could not find TTF URL in Google Fonts CSS.")
             except Exception as e:
                 errors.append(f"{f_name}: {e}")
     return errors
@@ -55,7 +105,12 @@ def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r") as f:
             return json.load(f)
-    return {"title": "💅 Storage Grid Visualizer", "display_fields": ["Name"], "field_formats": {}}
+    return {
+        "title": "💅 Storage Grid Visualizer", 
+        "display_fields": ["Name"], 
+        "field_formats": {},
+        "sticker_settings": {}
+    }
 
 def save_settings(settings):
     with open(SETTINGS_FILE, "w") as f:
@@ -66,26 +121,14 @@ app_settings = load_settings()
 app_title = app_settings.get("title", "💅 Storage Grid Visualizer")
 display_fields = app_settings.get("display_fields", ["Name"])
 field_formats = app_settings.get("field_formats", {})
-
-# --- TITLE EDIT POPUP (DIALOG) ---
-@st.dialog("Change App Title")
-def edit_title_dialog(current_title):
-    st.markdown("Enter a new title for your locator app:")
-    new_title = st.text_input("Title", value=current_title, label_visibility="collapsed")
-    if st.button("Save Title", type="primary"):
-        with st.spinner("Saving new title..."):
-            app_settings["title"] = new_title
-            save_settings(app_settings)
-            time.sleep(0.5)
-        st.rerun()
+sticker_settings = app_settings.get("sticker_settings", {})
 
 # --- DATABASE CONNECTION & DATA PROCESSING ---
-@st.cache_data(ttl=0)
+@st.cache_data(ttl=0, show_spinner="🔄 Fetching latest items from Koillection...")
 def load_data():
     db_url = "postgresql://postgres:password@postgresql:5432/koillection"
     conn = st.connection("koillection_db", type="sql", url=db_url)
     
-    # BULLETPROOF QUERY: Fetch everything!
     query = """
     SELECT i.id::text AS id, i.name, i.image, d.label, d.value
     FROM koi_item i
@@ -97,7 +140,6 @@ df = load_data()
 items_data = {}
 all_custom_fields = set()
 
-# Let Python do the filtering so we don't rely on strict SQL syntax
 for _, row in df.iterrows():
     iid = str(row['id'])
     if iid not in items_data:
@@ -110,7 +152,6 @@ for _, row in df.iterrows():
         lbl_str = str(lbl).strip()
         val_str = str(val).strip()
         
-        # Case-insensitive check for the word "location"
         if 'location' in lbl_str.lower():
             if items_data[iid]["location"]:
                 items_data[iid]["location"] += f", {val_str}"
@@ -126,19 +167,23 @@ display_fields = [f for f in display_fields if f in available_fields]
 if not display_fields:
     display_fields = ["Name"]
 
-# --- SIDEBAR: SETTINGS ---
-st.sidebar.header("⚙️ Settings")
 
-if font_errors:
-    st.sidebar.error("⚠️ Font Download Failed:\n" + "\n".join(font_errors))
+# --- POP-UP DIALOGS (NEW!) ---
 
-if st.sidebar.button("🔄 Refresh Database", help="Click this to instantly pull the newest items and fields from Koillection!"):
-    st.cache_data.clear()
-    st.rerun()
+@st.dialog("Change App Title")
+def edit_title_dialog(current_title):
+    st.markdown("Enter a new title for your locator app:")
+    new_title = st.text_input("Title", value=current_title, label_visibility="collapsed")
+    if st.button("Save Title", type="primary"):
+        with st.spinner("Saving new title..."):
+            app_settings["title"] = new_title
+            save_settings(app_settings)
+            time.sleep(0.5)
+        st.rerun()
 
-# 1. DISPLAY SETTINGS
-with st.sidebar.expander("👁️ Customize Grid Text", expanded=False):
-    st.markdown("<small>Select, reorder, and format the information displayed on the grid. <b>To reorder, clear the box and click them in the order you want!</b></small>", unsafe_allow_html=True)
+@st.dialog("👁️ Customize Grid Text", width="large")
+def grid_text_dialog():
+    st.markdown("Select, reorder, and format the information displayed on the grid. **To reorder, clear the box and click them in the order you want!**")
     
     selected_fields = st.multiselect(
         "Fields to display:",
@@ -147,51 +192,142 @@ with st.sidebar.expander("👁️ Customize Grid Text", expanded=False):
     )
     
     st.markdown("---")
-    st.markdown("**Text Formatting:**")
+    st.markdown("### Text Formatting")
     new_formats = {}
+    
     for f in selected_fields:
-        st.markdown(f"<strong style='color: #26a69a;'>{f}</strong>", unsafe_allow_html=True)
+        st.markdown(f"<strong style='color: #26a69a; font-size: 1.1em;'>{f}</strong>", unsafe_allow_html=True)
         current_fmt = field_formats.get(f, {"bold": False, "italic": False, "underline": False, "align": "Center", "size": "Auto-Fit"})
         
-        col1, col2, col3 = st.columns(3)
+        # Because we are in a wide dialog, we can put all 5 settings in one row!
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1: b = st.checkbox("Bold", value=current_fmt.get("bold", False), key=f"b_{f}")
         with col2: i = st.checkbox("Italic", value=current_fmt.get("italic", False), key=f"i_{f}")
         with col3: u = st.checkbox("Underline", value=current_fmt.get("underline", False), key=f"u_{f}")
-        
-        col_a, col_s = st.columns(2)
-        with col_a: align = st.selectbox("Alignment", ["Left", "Center", "Right"], index=["Left", "Center", "Right"].index(current_fmt.get("align", "Center")), key=f"a_{f}")
-        with col_s: size = st.selectbox("Size", ["Auto-Fit", "Small", "Medium", "Large"], index=["Auto-Fit", "Small", "Medium", "Large"].index(current_fmt.get("size", "Auto-Fit")), key=f"s_{f}")
+        with col4: align = st.selectbox("Alignment", ["Left", "Center", "Right"], index=["Left", "Center", "Right"].index(current_fmt.get("align", "Center")), key=f"a_{f}", label_visibility="collapsed")
+        with col5: size = st.selectbox("Size", ["Auto-Fit", "Small", "Medium", "Large"], index=["Auto-Fit", "Small", "Medium", "Large"].index(current_fmt.get("size", "Auto-Fit")), key=f"s_{f}", label_visibility="collapsed")
         
         new_formats[f] = {"bold": b, "italic": i, "underline": u, "align": align, "size": size}
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 10px 0; opacity: 0.2;'>", unsafe_allow_html=True)
     
-    if st.button("Save Display Settings"):
+    if st.button("Save Display Settings", type="primary", use_container_width=True):
         with st.spinner("Saving display settings..."):
             app_settings["display_fields"] = selected_fields
             app_settings["field_formats"] = new_formats
             save_settings(app_settings)
             time.sleep(0.5)
-        st.toast("Display settings saved!", icon="✅")
-        time.sleep(1)
         st.rerun()
 
-# 2. ADD A NEW BOX
+@st.dialog("🎨 Sticker Customization", width="large")
+def sticker_customization_dialog():
+    st.markdown("Customize the look of your printable stickers.")
+    
+    new_h_template = st.text_input("Heading Text", value=sticker_settings.get("heading_template", "Box {box}"), help="Type {box} where you want the box name to appear.")
+    
+    font_options = [
+        "Roboto", "Montserrat", "Oswald", "Dancing Script", "Open Sans", 
+        "Lato", "Merriweather", "Playfair Display", "Pacifico",
+        "Lobster", "Caveat", "Amatic SC", "Cinzel", "Great Vibes", "Bebas Neue"
+    ]
+    new_h_font = st.selectbox("Heading Font", font_options, index=font_options.index(sticker_settings.get("heading_font", "Roboto")))
+    
+    # --- LIVE FONT PREVIEW ---
+    preview_font_url = new_h_font.replace(" ", "+")
+    preview_text = new_h_template.replace("{box}", "1")
+    if not preview_text.strip():
+        preview_text = "Preview Text"
+        
+    st.markdown(f"<style>@import url('https://fonts.googleapis.com/css2?family={preview_font_url}&display=swap');</style>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div style='
+            font-family: "{new_h_font}", sans-serif; 
+            font-size: 36px; 
+            padding: 15px; 
+            background: #f0f2f6; 
+            color: #31333F;
+            border-radius: 8px; 
+            text-align: center; 
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+            word-wrap: break-word;
+        '>
+            {preview_text}
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("### Font Styles & Colors")
+    col1, col2, col3 = st.columns(3)
+    with col1: new_h_bold = st.checkbox("Bold Heading", value=sticker_settings.get("heading_bold", True), key="sh_bold")
+    with col2: new_h_italic = st.checkbox("Italic Heading", value=sticker_settings.get("heading_italic", False), key="sh_italic")
+    with col3: new_h_underline = st.checkbox("Underline Heading", value=sticker_settings.get("heading_underline", False), key="sh_underline")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns(5)
+    with col_c1: new_h_color = st.color_picker("Heading Text", value=sticker_settings.get("heading_color", "#000000"))
+    with col_c2: new_bg_color = st.color_picker("Background", value=sticker_settings.get("bg_color", "#FFFFFF"))
+    with col_c3: new_grid_bg_color = st.color_picker("Grid Header", value=sticker_settings.get("grid_bg_color", "#008080"))
+    with col_c4: new_grid_color = st.color_picker("Grid Lines", value=sticker_settings.get("grid_color", "#000000"))
+    with col_c5: new_text_color = st.color_picker("Grid Text", value=sticker_settings.get("text_color", "#000000"))
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Save Sticker Settings", type="primary", use_container_width=True):
+        with st.spinner("Saving sticker settings..."):
+            app_settings["sticker_settings"] = {
+                "heading_template": new_h_template,
+                "heading_font": new_h_font,
+                "heading_bold": new_h_bold,
+                "heading_italic": new_h_italic,
+                "heading_underline": new_h_underline,
+                "heading_color": new_h_color,
+                "bg_color": new_bg_color,
+                "grid_bg_color": new_grid_bg_color,
+                "grid_color": new_grid_color,
+                "text_color": new_text_color
+            }
+            save_settings(app_settings)
+            time.sleep(0.5)
+        
+        st.session_state.view_mode = "Sticker Grid (Printable)"
+        st.rerun()
+
+
+# --- SIDEBAR ---
+st.sidebar.header("⚙️ Global Settings")
+
+if font_errors:
+    st.sidebar.error("⚠️ Font Download Failed:\n" + "\n".join(font_errors))
+
+# Buttons to launch our new pop-up dialogs!
+if st.sidebar.button("👁️ Customize Grid Text", use_container_width=True):
+    grid_text_dialog()
+    
+if st.sidebar.button("🎨 Customize Sticker Design", use_container_width=True):
+    sticker_customization_dialog()
+
+st.sidebar.markdown("---")
+st.sidebar.header("📦 Box Management")
+
+# 1. ADD A NEW BOX
 with st.sidebar.expander("➕ Add a New Box", expanded=False):
     st.markdown("<small>Define the physical size of a new storage box.</small>", unsafe_allow_html=True)
     new_box = st.text_input("New Box Number/Name", help="E.g., type '1' if your location is '1-A1'.")
     new_cols = st.number_input("Columns (Letters)", min_value=1, max_value=26, value=8, help="How many items wide is the box?", key="new_cols")
     new_rows = st.number_input("Rows (Numbers)", min_value=1, max_value=50, value=5, help="How many items deep is the box?", key="new_rows")
-    if st.button("Add Box"):
+    if st.button("Add Box", use_container_width=True):
         if new_box:
             with st.spinner(f"Creating Box {new_box}..."):
-                box_config[str(new_box)] = {"cols": new_cols, "rows": new_rows}
+                box_config[str(new_box)] = {"cols": new_cols, "rows": new_rows, "unusable": []}
                 save_config(box_config)
                 time.sleep(0.5)
             st.toast(f"Added Box {new_box}!", icon="✅")
             time.sleep(1)
             st.rerun()
 
-# 3. EDIT OR DELETE AN EXISTING BOX
+# 2. EDIT OR DELETE AN EXISTING BOX
 if box_config:
     with st.sidebar.expander("✏️ Edit / Delete a Box", expanded=False):
         st.markdown("<small>Modify or remove an existing box.</small>", unsafe_allow_html=True)
@@ -199,20 +335,36 @@ if box_config:
         if selected_box:
             current_cols = box_config[selected_box]["cols"]
             current_rows = box_config[selected_box]["rows"]
+            current_unusable = box_config[selected_box].get("unusable", [])
+            
             edit_cols = st.number_input("Update Columns", min_value=1, max_value=26, value=current_cols, key="edit_cols")
             edit_rows = st.number_input("Update Rows", min_value=1, max_value=50, value=current_rows, key="edit_rows")
+            
+            all_possible_cells = [f"{chr(65+c)}{r}" for r in range(1, edit_rows + 1) for c in range(edit_cols)]
+            valid_unusable = [cell for cell in current_unusable if cell in all_possible_cells]
+            
+            st.markdown("---")
+            st.markdown("**🚫 Blackout Spaces**")
+            st.markdown("<small>Select spaces that are physically unusable (e.g., broken slots, dividers). They will appear solid black on the grid.</small>", unsafe_allow_html=True)
+            edit_unusable = st.multiselect("Unusable Spaces", options=all_possible_cells, default=valid_unusable)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Update"):
+                if st.button("Update Box", use_container_width=True):
                     with st.spinner("Updating box..."):
-                        box_config[selected_box] = {"cols": edit_cols, "rows": edit_rows}
+                        box_config[selected_box] = {
+                            "cols": edit_cols, 
+                            "rows": edit_rows,
+                            "unusable": edit_unusable
+                        }
                         save_config(box_config)
                         time.sleep(0.5)
                     st.toast(f"Updated Box {selected_box}!", icon="✅")
                     time.sleep(1)
                     st.rerun()
             with col2:
-                if st.button("🗑️ Delete"):
+                if st.button("🗑️ Delete Box", use_container_width=True):
                     with st.spinner("Deleting box..."):
                         del box_config[selected_box]
                         save_config(box_config)
@@ -221,7 +373,7 @@ if box_config:
                     time.sleep(1)
                     st.rerun()
 
-st.sidebar.markdown("### 📦 Current Boxes")
+st.sidebar.markdown("### Current Boxes")
 if box_config:
     for b_name, b_dims in box_config.items():
         st.sidebar.markdown(f"**Box {b_name}**: {b_dims['cols']} Columns × {b_dims['rows']} Rows")
@@ -229,7 +381,7 @@ else:
     st.sidebar.info("No boxes configured yet.")
 
 st.sidebar.markdown("---")
-if st.sidebar.button("Clear All Box Configurations"):
+if st.sidebar.button("Clear All Box Configurations", use_container_width=True):
     with st.spinner("Clearing all boxes..."):
         save_config({})
         time.sleep(0.5)
@@ -283,13 +435,12 @@ if not st.session_state.hide_instructions:
         ---
         
         ### 🚀 Using the Locator
-        * **Customize Text:** Use the **👁️ Customize Grid Text** menu on the left to choose what information (Brand, Name, Color, etc.) is displayed on the grid and stickers. 
-            * **Auto-Fit:** By default, the text size is set to "Auto-Fit". The app will automatically calculate the absolute largest font size possible to make your text fill the cell without overflowing!
-            * **Format:** You can apply **Bold**, *Italic*, <u>Underline</u>, and change the **Alignment** (Left, Center, Right) for every single field!
+        * **Customize Text:** Click **👁️ Customize Grid Text** in the sidebar to choose what information (Brand, Name, Color, etc.) is displayed on the grid and stickers. 
+        * **Customize Stickers:** Click **🎨 Customize Sticker Design** in the sidebar to change fonts, colors, and heading text for your printable stickers!
+        * **Blackout Spaces:** If your physical box has broken slots or dividers, use the **✏️ Edit Box** menu to mark those spaces as "Unusable". They will appear solid black on your grid!
         * **Visual Grid:** By default, you will see a visual representation of your boxes with item images. Use the tabs at the top to switch between different boxes.
         * **Printable Stickers:** Select **"Sticker Grid (Printable)"** at the top of the page. This strips away the dark background and images, giving you a clean, ink-friendly table.
         * **Download & Print:** While in the Sticker Grid view, click the **"📥 Download Box Sticker"** button to save a high-resolution PNG image of the grid, perfect for printing and attaching to the lid or inside of your physical box!
-        * **Other Locations:** If you have items with locations that don't match your configured boxes (e.g., "In Transit" or "Display Shelf"), they will automatically be grouped into their own tabs at the top of the screen.
         """)
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -350,7 +501,10 @@ for item in items_data.values():
             other_containers[loc].append(item)
 
 # --- UI GENERATION ---
-view_mode = st.radio("Select Grid View:", ["Visual Grid (Images)", "Sticker Grid (Printable)"], horizontal=True)
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = "Visual Grid (Images)"
+
+view_mode = st.radio("Select Grid View:", ["Visual Grid (Images)", "Sticker Grid (Printable)"], horizontal=True, key="view_mode")
 
 html_size_map = {"Small": "9px", "Medium": "11px", "Large": "14px", "Auto-Fit": "12px"}
 print_size_map = {"Small": 20, "Medium": 28, "Large": 36}
@@ -359,6 +513,7 @@ def get_html_grid(box_num, box_data):
     dims = box_config[box_num]
     cols = "".join([chr(65 + i) for i in range(dims['cols'])])
     rows = dims['rows']
+    unusable_cells = dims.get("unusable", [])
         
     html = "<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: white;'>"
     html += "<tr><th style='width: 40px;'></th>" + "".join([f"<th style='text-align: center; padding: 5px;'>{c}</th>" for c in cols]) + "</tr>"
@@ -366,8 +521,12 @@ def get_html_grid(box_num, box_data):
         html += f"<tr><th style='text-align: center; padding: 10px;'>{r}</th>"
         for c in cols:
             item = box_data[r][c]
+            cell_id = f"{c}{r}"
             cell_style = "border: 1px solid #555; height: 140px; position: relative; padding: 0;"
-            if item is None:
+            
+            if cell_id in unusable_cells:
+                html += f"<td style='{cell_style} background: #000000;'></td>"
+            elif item is None:
                 html += f"<td style='{cell_style} background: #222;'></td>"
             else:
                 img_b64, mime = get_image_base64(item["image"])
@@ -395,39 +554,61 @@ def get_sticker_html_grid(box_num, box_data):
     dims = box_config[box_num]
     cols = "".join([chr(65 + i) for i in range(dims['cols'])])
     rows = dims['rows']
+    unusable_cells = dims.get("unusable", [])
     col_width = f"{100 / (len(cols) + 1):.2f}%"
-        
-    teal = "#008080"
-    html = f"<div style='width: 100%; max-width: 800px; background: white; padding: 20px; box-sizing: border-box;'>"
-    html += f"<h2 style='text-align: center; color: black; margin-top: 0;'>Box {box_num}</h2>"
-    html += "<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: black; font-family: Arial, sans-serif;'>"
     
-    html += f"<tr><th style='width: {col_width}; border: 1px solid black; background: {teal}; color: white;'></th>"
+    ss = app_settings.get("sticker_settings", {})
+    h_temp = ss.get("heading_template", "Box {box}")
+    h_font = ss.get("heading_font", "Roboto")
+    h_bold = "bold" if ss.get("heading_bold", True) else "normal"
+    h_italic = "italic" if ss.get("heading_italic", False) else "normal"
+    h_underline = "underline" if ss.get("heading_underline", False) else "none"
+    h_color = ss.get("heading_color", "#000000")
+    bg_color = ss.get("bg_color", "#FFFFFF")
+    grid_bg_color = ss.get("grid_bg_color", "#008080")
+    grid_color = ss.get("grid_color", "#000000")
+    text_color = ss.get("text_color", "#000000")
+    
+    heading_text = h_temp.replace("{box}", str(box_num))
+    font_family_url = h_font.replace(" ", "+")
+    
+    html = f"<style>@import url('https://fonts.googleapis.com/css2?family={font_family_url}:ital,wght@0,400;0,700;1,400;1,700&display=swap');</style>"
+    
+    html += f"<div style='width: 100%; max-width: 800px; background: {bg_color}; padding: 20px; box-sizing: border-box;'>"
+    html += f"<h2 style='text-align: center; font-size: 3em; color: {h_color}; font-family: \"{h_font}\", sans-serif; font-weight: {h_bold}; font-style: {h_italic}; text-decoration: {h_underline}; margin-top: 0; margin-bottom: 15px;'>{heading_text}</h2>"
+    html += f"<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: {text_color}; font-family: Arial, sans-serif;'>"
+    
+    html += f"<tr><th style='width: {col_width}; border: 1px solid {grid_color}; background: {grid_bg_color}; color: white;'></th>"
     for c in cols:
-        html += f"<th style='width: {col_width}; border: 1px solid black; background: {teal}; color: white; padding: 10px 2px;'>{c}</th>"
+        html += f"<th style='width: {col_width}; border: 1px solid {grid_color}; background: {grid_bg_color}; color: white; padding: 10px 2px;'>{c}</th>"
     html += "</tr>"
     
     for r in range(1, rows + 1):
-        html += f"<tr><th style='border: 1px solid black; background: {teal}; color: white; padding: 10px 2px;'>{r}</th>"
+        html += f"<tr><th style='border: 1px solid {grid_color}; background: {grid_bg_color}; color: white; padding: 10px 2px;'>{r}</th>"
         for c in cols:
             item = box_data[r][c]
-            html += f"<td style='border: 1px solid black; height: 120px; vertical-align: top; padding: 5px; overflow: hidden;'>"
-            html += f"<div style='font-weight: bold; font-size: 12px;'>{c}{r}</div>"
+            cell_id = f"{c}{r}"
             
-            if item:
-                for f in display_fields:
-                    val = item['name'] if f == "Name" else item['fields'].get(f, "")
-                    if val:
-                        fmt = field_formats.get(f, {})
-                        fw = "bold" if fmt.get("bold") else "normal"
-                        fs = "italic" if fmt.get("italic") else "normal"
-                        td = "underline" if fmt.get("underline") else "none"
-                        ta = fmt.get("align", "Center").lower()
-                        fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
-                        
-                        html += f"<div style='font-size: {fz}; margin-top: 3px; word-wrap: break-word; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta};'>{val}</div>"
-            
-            html += "</td>"
+            if cell_id in unusable_cells:
+                html += f"<td style='border: 1px solid {grid_color}; height: 120px; background: #000000;'></td>"
+            else:
+                html += f"<td style='border: 1px solid {grid_color}; height: 120px; vertical-align: top; padding: 5px; overflow: hidden;'>"
+                html += f"<div style='font-weight: bold; font-size: 12px; color: {text_color};'>{c}{r}</div>"
+                
+                if item:
+                    for f in display_fields:
+                        val = item['name'] if f == "Name" else item['fields'].get(f, "")
+                        if val:
+                            fmt = field_formats.get(f, {})
+                            fw = "bold" if fmt.get("bold") else "normal"
+                            fs = "italic" if fmt.get("italic") else "normal"
+                            td = "underline" if fmt.get("underline") else "none"
+                            ta = fmt.get("align", "Center").lower()
+                            fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
+                            
+                            html += f"<div style='font-size: {fz}; margin-top: 3px; word-wrap: break-word; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color: {text_color};'>{val}</div>"
+                
+                html += "</td>"
         html += "</tr>"
     html += "</table></div>"
     return html
@@ -451,14 +632,31 @@ def wrap_text_pil(text, font, max_width, draw):
 
 def get_font(is_bold, is_italic, size):
     try:
-        if is_bold and is_italic:
-            return ImageFont.truetype("/app/Roboto-BoldItalic.ttf", size)
-        elif is_bold:
-            return ImageFont.truetype("/app/Roboto-Bold.ttf", size)
-        elif is_italic:
-            return ImageFont.truetype("/app/Roboto-Italic.ttf", size)
-        else:
-            return ImageFont.truetype("/app/Roboto-Regular.ttf", size)
+        if is_bold and is_italic: return ImageFont.truetype("/app/Roboto-BoldItalic.ttf", size)
+        elif is_bold: return ImageFont.truetype("/app/Roboto-Bold.ttf", size)
+        elif is_italic: return ImageFont.truetype("/app/Roboto-Italic.ttf", size)
+        else: return ImageFont.truetype("/app/Roboto-Regular.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+def get_heading_font(font_name, is_bold, is_italic, size):
+    font_name_no_space = font_name.replace(" ", "")
+    style = ""
+    if is_bold and is_italic: style = "-BoldItalic"
+    elif is_bold: style = "-Bold"
+    elif is_italic: style = "-Italic"
+    else: style = "-Regular"
+    
+    path = f"/app/{font_name_no_space}{style}.ttf"
+    if not os.path.exists(path):
+        path = f"/app/{font_name_no_space}-Regular.ttf"
+        if not os.path.exists(path):
+            path = f"/app/Roboto{style}.ttf"
+            if not os.path.exists(path):
+                path = "/app/Roboto-Regular.ttf"
+                
+    try:
+        return ImageFont.truetype(path, size)
     except:
         return ImageFont.load_default()
 
@@ -466,7 +664,20 @@ def get_sticker_image_bytes(box_num, box_data):
     dims = box_config[box_num]
     cols = "".join([chr(65 + i) for i in range(dims['cols'])])
     rows = dims['rows']
+    unusable_cells = dims.get("unusable", [])
     num_cols = len(cols)
+
+    ss = app_settings.get("sticker_settings", {})
+    h_temp = ss.get("heading_template", "Box {box}")
+    h_font = ss.get("heading_font", "Roboto")
+    h_bold = ss.get("heading_bold", True)
+    h_italic = ss.get("heading_italic", False)
+    h_underline = ss.get("heading_underline", False)
+    h_color = ss.get("heading_color", "#000000")
+    bg_color = ss.get("bg_color", "#FFFFFF")
+    grid_bg_color = ss.get("grid_bg_color", "#008080")
+    grid_color = ss.get("grid_color", "#000000")
+    text_color = ss.get("text_color", "#000000")
 
     w, h = 1600, 1800 
     title_area = 150
@@ -476,30 +687,52 @@ def get_sticker_image_bytes(box_num, box_data):
     cell_w = (w - header_col_w) / num_cols
     cell_h = (h - title_area - header_row_h) / rows
     
-    img = Image.new('RGB', (w, h), 'white')
+    img = Image.new('RGB', (w, h), bg_color)
     draw = ImageDraw.Draw(img)
     
     try:
-        font_title = ImageFont.truetype("/app/Roboto-Bold.ttf", 80)
         font_header = ImageFont.truetype("/app/Roboto-Bold.ttf", 60)
         font_cell_id = ImageFont.truetype("/app/Roboto-Bold.ttf", 40)
     except:
-        font_title = ImageFont.load_default()
         font_header = ImageFont.load_default()
         font_cell_id = ImageFont.load_default()
 
-    title_text = f"Box {box_num}"
-    bbox = draw.textbbox((0, 0), title_text, font=font_title)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text(((w - tw) / 2, (title_area - th) / 2), title_text, font=font_title, fill="black")
+    title_text = h_temp.replace("{box}", str(box_num))
+    
+    max_title_w = w - 80 
+    max_title_h = title_area - 40 
+    
+    title_font_size = 160 
+    
+    while title_font_size > 20:
+        try:
+            font_title = get_heading_font(h_font, h_bold, h_italic, title_font_size)
+        except:
+            font_title = ImageFont.load_default()
+            break 
+            
+        bbox = draw.textbbox((0, 0), title_text, font=font_title)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        
+        if tw <= max_title_w and th <= max_title_h:
+            break
+            
+        title_font_size -= 2
 
-    teal = "#008080"
-    draw.rectangle([0, title_area, w, title_area + header_row_h], fill=teal)
-    draw.rectangle([0, title_area, header_col_w, h], fill=teal)
+    title_x = (w - tw) / 2
+    title_y = (title_area - th) / 2
+    draw.text((title_x, title_y), title_text, font=font_title, fill=h_color)
+    
+    if h_underline:
+        underline_thickness = max(4, int(title_font_size / 15))
+        draw.line([(title_x, title_y + th + 10), (title_x + tw, title_y + th + 10)], fill=h_color, width=underline_thickness)
+
+    draw.rectangle([0, title_area, w, title_area + header_row_h], fill=grid_bg_color)
+    draw.rectangle([0, title_area, header_col_w, h], fill=grid_bg_color)
     
     for i in range(num_cols + 1):
         x = header_col_w + (i * cell_w)
-        draw.line([(x, title_area), (x, h)], fill="black", width=4)
+        draw.line([(x, title_area), (x, h)], fill=grid_color, width=4)
         if i < num_cols:
             txt = cols[i]
             bbox = draw.textbbox((0, 0), txt, font=font_header)
@@ -508,7 +741,7 @@ def get_sticker_image_bytes(box_num, box_data):
             
     for i in range(rows + 1):
         y = title_area + header_row_h + (i * cell_h)
-        draw.line([(0, y), (w, y)], fill="black", width=4)
+        draw.line([(0, y), (w, y)], fill=grid_color, width=4)
         if i < rows:
             txt = str(i + 1)
             bbox = draw.textbbox((0, 0), txt, font=font_header)
@@ -518,10 +751,16 @@ def get_sticker_image_bytes(box_num, box_data):
     for r in range(1, rows + 1):
         for c_idx, c in enumerate(cols):
             item = box_data[r][c]
+            cell_id = f"{c}{r}"
+            
             x0 = header_col_w + (c_idx * cell_w)
             y0 = title_area + header_row_h + ((r - 1) * cell_h)
             
-            draw.text((x0 + 10, y0 + 10), f"{c}{r}", font=font_cell_id, fill="black")
+            if cell_id in unusable_cells:
+                draw.rectangle([x0, y0, x0 + cell_w, y0 + cell_h], fill="#000000", outline=grid_color, width=4)
+                continue 
+            
+            draw.text((x0 + 10, y0 + 10), cell_id, font=font_cell_id, fill=text_color)
             
             if item:
                 max_w = cell_w - 20
@@ -579,10 +818,10 @@ def get_sticker_image_bytes(box_num, box_data):
                         else: 
                             x_draw = x0 + (cell_w - tw) / 2
                             
-                        draw.text((x_draw, y_text), line, font=font_text, fill="black")
+                        draw.text((x_draw, y_text), line, font=font_text, fill=text_color)
                         
                         if is_underline:
-                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill="black", width=2)
+                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill=text_color, width=2)
                         
                         y_text += th + 4
                     y_text += 4
@@ -604,7 +843,7 @@ else:
 
         for i, b in enumerate(box_keys):
             with tabs[i]:
-                if view_mode == "Sticker Grid (Printable)":
+                if st.session_state.view_mode == "Sticker Grid (Printable)":
                     col1, col2 = st.columns([1, 4])
                     with col1:
                         png_bytes = get_sticker_image_bytes(b, boxes[b])
