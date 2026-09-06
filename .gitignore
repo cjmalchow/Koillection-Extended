@@ -40,3 +40,9 @@ docker-compose.yml
 /phpunit.xml
 /.phpunit.cache/
 ###< phpunit/phpunit ###
+backups/
+.env.local
+public/.env.local
+db_data/
+*.sql
+uploads/

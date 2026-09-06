@@ -1,0 +1,20 @@
+{% extends 'layout.html.twig' %}
+
+{% block title %}Nail Polish Ranker{% endblock %}
+
+{% block content %}
+    <div class="iframe-container" style="height: calc(100vh - 100px); width: 100%;">
+        <iframe id="ranker-iframe" src="" width="100%" height="100%" frameborder="0" style="border:none; border-radius: 8px;"></iframe>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const currentPort = window.location.port;
+            const hostname = window.location.hostname;
+            let targetPort = "8505"; 
+            if (currentPort === "8144") { targetPort = "8506"; } 
+            else if (currentPort === "8081") { targetPort = "8505"; }
+            document.getElementById('ranker-iframe').src = `http://${hostname}:${targetPort}`;
+        });
+    </script>
+{% endblock %}
