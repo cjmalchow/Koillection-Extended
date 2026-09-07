@@ -304,4 +304,9 @@ class ItemController extends AbstractController
     {
         return $this->render('App/color_tracker.html.twig');
     }
-}
+#[Route('/ranker', name: 'app_ranker', methods: ['GET'])]
+    public function ranker(): Response
+    {
+        return $this->render('App/Ranker/index.html.twig');
+    }
+} // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE
