@@ -6,57 +6,26 @@ import base64
 import uuid
 import datetime
 import time
-import colorsys
 from sqlalchemy import text
 from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 st.set_page_config(page_title="Smart Color Matcher", page_icon="💅", layout="wide")
 
-# --- SESSION STATE INITIALIZATION (GOLDEN RULE) ---
-if "hide_color_instructions" not in st.session_state:
-    st.session_state.hide_color_instructions = False
-
 # ==========================================
-# ⚙️ CONFIGURATION
+# ⚙️ DATABASE CONFIGURATION (POSTGRESQL)
 # ==========================================
-KOILLECTION_WEB_URL = "http://localhost:8081" 
+# This will use the Production URL if it exists in docker-compose, otherwise it defaults to the Sandbox URL!
+DB_URL = os.getenv("DATABASE_URL", "postgresql://koillection_user:local_polish_vault_2026@db:5432/koillection")
+KOILLECTION_WEB_URL = "http://10.0.0.207:8144" 
 IMAGE_DIR = "/app/public/uploads"
 
-# --- DATABASE CONNECTION ---
-def get_db_url():
-    user = os.getenv("DB_USER", "koillection_user")
-    password = os.getenv("DB_PASSWORD", "local_polish_vault_2026")
-    host = os.getenv("DB_HOST", "db")
-    port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "koillection")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
-
-# --- DYNAMIC FINISH OPTIONS ---
-@st.cache_data(ttl=0, show_spinner="🔄 Fetching Lacquer Types...")
-def fetch_finish_options():
-    try:
-        conn = st.connection("koillection_db", type="sql", url=get_db_url())
-        query = """
-            SELECT c.label 
-            FROM koi_choice c 
-            JOIN koi_choice_list cl ON c.choice_list_id = cl.id 
-            WHERE cl.name = 'Lacquer Type'
-            ORDER BY c.label ASC;
-        """
-        df = conn.query(query, ttl=0)
-        if not df.empty:
-            return df['label'].tolist()
-    except Exception as e:
-        print(f"Database error fetching choice list: {e}")
-        
-    return [
-        "Creme", "Holographic (Linear)", "Holographic (Scattered)", "Glitter", 
-        "Magnetic", "Multichrome", "Duochrome", "Jelly", "Pearl", "Matte", 
-        "Topper", "Flakie", "Shimmer", "Metallic", "Neon", "Thermal", "Solar"
-    ]
-
-FINISH_OPTIONS = fetch_finish_options()
+FINISH_OPTIONS = [
+    "Creme", "Holographic (Linear)", "Holographic (Scattered)", "Glitter", 
+    "Magnetic", "Multichrome", "Duochrome", "Jelly", "Pearl", "Matte", 
+    "Topper", "Flakie", "Shimmer", "Metallic", "Neon", "Thermal", "Solar"
+]
+# ==========================================
 
 # --- COLOR MATH ---
 def hex_to_rgb(hex_color):
@@ -64,9 +33,6 @@ def hex_to_rgb(hex_color):
     if len(hex_color) != 6:
         return (0, 0, 0) 
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-def rgb_to_hex(rgb):
-    return '#{:02x}{:02x}{:02x}'.format(int(round(rgb[0])), int(round(rgb[1])), int(round(rgb[2])))
 
 def color_distance(hex1, hex2):
     if not hex1 or not hex2 or pd.isna(hex1) or pd.isna(hex2) or hex1 == "" or hex2 == "":
@@ -86,49 +52,10 @@ def color_distance(hex1, hex2):
 
     return math.sqrt(weight_r * (r ** 2) + weight_g * (g ** 2) + weight_b * (b ** 2))
 
-def get_color_harmonies(hex_color):
-    r, g, b = hex_to_rgb(hex_color)
-    h, s, v = colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
-    
-    comp_h = (h + 0.5) % 1.0
-    comp_rgb = colorsys.hsv_to_rgb(comp_h, s, v)
-    comp_hex = rgb_to_hex([x * 255 for x in comp_rgb])
-    
-    ana1_h = (h + (30/360)) % 1.0
-    ana2_h = (h - (30/360)) % 1.0
-    ana1_rgb = colorsys.hsv_to_rgb(ana1_h, s, v)
-    ana2_rgb = colorsys.hsv_to_rgb(ana2_h, s, v)
-    ana1_hex = rgb_to_hex([x * 255 for x in ana1_rgb])
-    ana2_hex = rgb_to_hex([x * 255 for x in ana2_rgb])
-    
-    tri1_h = (h + (120/360)) % 1.0
-    tri2_h = (h + (240/360)) % 1.0
-    tri1_rgb = colorsys.hsv_to_rgb(tri1_h, s, v)
-    tri2_rgb = colorsys.hsv_to_rgb(tri2_h, s, v)
-    tri1_hex = rgb_to_hex([x * 255 for x in tri1_rgb])
-    tri2_hex = rgb_to_hex([x * 255 for x in tri2_rgb])
-    
-    return {
-        "Complementary": [comp_hex],
-        "Analogous": [ana1_hex, ana2_hex],
-        "Triadic": [tri1_hex, tri2_hex]
-    }
-
-def find_closest_polish(target_hex, tagged_df, exclude_id=None):
-    temp_df = tagged_df.copy()
-    if exclude_id:
-        temp_df = temp_df[temp_df['id'] != exclude_id]
-    if temp_df.empty: 
-        return None
-    
-    temp_df["Dist"] = temp_df["color_hex"].apply(lambda x: color_distance(target_hex, x))
-    best_match = temp_df.loc[temp_df["Dist"].idxmin()]
-    return best_match
-
 # --- DIRECT DATABASE FUNCTIONS ---
 @st.cache_data(ttl=0)
 def fetch_collections():
-    conn = st.connection("koillection_db", type="sql", url=get_db_url())
+    conn = st.connection("koillection_db", type="sql", url=DB_URL)
     query = "SELECT id::text AS id, title FROM koi_collection ORDER BY title ASC;"
     return conn.query(query, ttl=0)
 
@@ -137,25 +64,14 @@ def fetch_polishes(collection_id):
     if not collection_id:
         return pd.DataFrame()
         
-    conn = st.connection("koillection_db", type="sql", url=get_db_url())
+    conn = st.connection("koillection_db", type="sql", url=DB_URL)
     
-    # DYNAMIC COLUMN CHECK: Find out exactly where Koillection hides the filenames!
-    cols_df = conn.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'koi_datum'", ttl=0)
-    datum_cols = cols_df['column_name'].tolist()
-    
-    gallery_cols = ["d.value"]
-    if 'image' in datum_cols: gallery_cols.insert(0, "d.image")
-    if 'file' in datum_cols: gallery_cols.insert(0, "d.file")
-    
-    gallery_sql = f"COALESCE({', '.join(gallery_cols)})"
-    
-    # FIXED: The bad koi_photo line is completely gone!
     query = f"""
     SELECT 
         i.id::text AS id, 
         i.name, 
         i.image AS main_image, 
-        STRING_AGG(DISTINCT CASE WHEN d.type = 'image' OR d.type = 'file' THEN {gallery_sql} END, ',') AS gallery_images,
+        STRING_AGG(DISTINCT CASE WHEN d.type = 'image' THEN d.value END, ',') AS gallery_images,
         i.created_at,
         MAX(CASE WHEN d.label = 'Colour (Hex)' THEN d.value END) AS color_hex,
         MAX(CASE WHEN d.label = 'Colour (Hex)' THEN d.id::text END) AS data_field_id,
@@ -179,7 +95,7 @@ def fetch_polishes(collection_id):
     return df
 
 def save_polish_data_to_db(item_id, fields_to_save):
-    conn = st.connection("koillection_db", type="sql", url=get_db_url())
+    conn = st.connection("koillection_db", type="sql", url=DB_URL)
     now = datetime.datetime.now(datetime.timezone.utc)
     
     try:
@@ -192,12 +108,14 @@ def save_polish_data_to_db(item_id, fields_to_save):
                 field_type = 'color' if 'Hex' in label else 'text'
                 
                 if field_id and not pd.isna(field_id):
+                    # FIXED: Cast to text to match the database column type!
                     session.execute(
                         text("UPDATE koi_datum SET value = :val, updated_at = :now WHERE id = CAST(:id AS text)"),
                         {"val": val, "now": now, "id": str(field_id)}
                     )
                 elif val != "": 
                     new_id = str(uuid.uuid4())
+                    # FIXED: Cast to text
                     session.execute(
                         text("""
                         INSERT INTO koi_datum (id, item_id, type, label, value, position, created_at, updated_at, visibility, final_visibility) 
@@ -206,6 +124,7 @@ def save_polish_data_to_db(item_id, fields_to_save):
                         {"id": new_id, "item_id": str(item_id), "type": field_type, "label": label, "val": val, "now": now}
                     )
             
+            # FIXED: Cast to text
             session.execute(
                 text("UPDATE koi_item SET updated_at = :now WHERE id = CAST(:item_id AS text)"),
                 {"now": now, "item_id": str(item_id)}
@@ -246,67 +165,13 @@ def get_image_base64(img_path):
 def get_pil_image(img_path):
     full_path = resolve_image_path(img_path)
     if not full_path or not os.path.exists(full_path): 
+        st.error(f"DEBUG: Missing file -> {full_path}")
         return None
     try:
         return Image.open(full_path).convert("RGB")
     except Exception as e:
+        st.error(f"DEBUG: Corrupt file -> {e}")
         return None
-
-# --- HTML CARD GENERATOR ---
-def create_polish_card_html(row, distance_text=None, math_color=None):
-    img_html = ""
-    img_b64 = get_image_base64(row['main_image'])
-    if img_b64:
-        img_html = (
-            f'<label for="lb_{row["id"]}" style="cursor: zoom-in; margin: 0;">'
-            f'<img src="data:image/jpeg;base64,{img_b64}" style="width: 70px; height: 70px; object-fit: cover; border-radius: 8px; margin-right: 15px; border: 1px solid #ddd; transition: transform 0.2s;" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'scale(1)\'">'
-            f'</label>'
-            f'<input type="checkbox" id="lb_{row["id"]}" class="lb-checkbox">'
-            f'<div class="lb-overlay">'
-            f'<label for="lb_{row["id"]}" class="lb-bg-close"></label>'
-            f'<img src="data:image/jpeg;base64,{img_b64}" style="position: relative; z-index: 2;">'
-            f'</div>'
-        )
-
-    c1 = row["color_hex"]
-    c2 = row["color_hex_2"] if pd.notna(row["color_hex_2"]) and row["color_hex_2"] != "" else c1
-    circle_css = f"background: linear-gradient(135deg, {c1} 50%, {c2} 50%);"
-
-    badges_html = ""
-    if pd.notna(row['finish']) and row['finish'] != "":
-        finishes = [f.strip() for f in row['finish'].split(",")]
-        for f in finishes:
-            badges_html += f'<span class="finish-badge">{f}</span>'
-            
-    location_html = ""
-    if pd.notna(row['location']) and str(row['location']).strip() != "":
-        location_html = f'<br><span style="color: #008080; font-size: 0.95em; font-weight: bold;">📍 Location: {row["location"]}</span>'
-
-    display_title = f"{row['brand']} - {row['name']}" if pd.notna(row['brand']) and row['brand'] else row['name']
-    item_url = f"{KOILLECTION_WEB_URL}/items/{row['id']}"
-
-    dist_html = f'<span style="color: #666; font-size: 0.9em;">{distance_text}</span><br>' if distance_text else ""
-    
-    math_color_html = ""
-    if math_color:
-        math_color_html = f'<div style="display: flex; align-items: center; margin-top: 5px;"><div style="width: 15px; height: 15px; border-radius: 50%; background-color: {math_color}; border: 1px solid #999; margin-right: 5px;"></div><span style="font-size: 0.8em; color: #666;">Target: {math_color}</span></div>'
-
-    final_html = (
-        f'<div style="display: flex; align-items: center; margin-bottom: 10px; padding: 10px; background-color: #f9f9f9; border-radius: 8px; color: #333;">'
-        f'{img_html}'
-        f'<div style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #ddd; margin-right: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); {circle_css}"></div>'
-        f'<div>'
-        f'<a href="{item_url}" target="_blank" class="polish-link">'
-        f'<strong style="font-size: 1.2em;">{display_title}</strong>'
-        f'</a><br>'
-        f'{dist_html}'
-        f'{location_html}'
-        f'{math_color_html}'
-        f'<div style="margin-top: 4px;">{badges_html}</div>'
-        f'</div>'
-        f'</div>'
-    )
-    return final_html
 
 # --- APP SETUP ---
 st.title("💅 Smart Color Matcher")
@@ -332,19 +197,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- USER FRIENDLY INSTRUCTIONS ---
+if "hide_color_instructions" not in st.session_state:
+    st.session_state.hide_color_instructions = False
+
 if not st.session_state.hide_color_instructions:
     with st.expander("ℹ️ How to use the Color Tracker", expanded=True):
         st.markdown("""
         **Welcome to the Color Tracker!**  
         This tool helps you assign exact colors to your nail polishes and search your collection for color matches.
-        
-        ### 📋 Required Koillection Setup
-        For this app to work its magic, make sure you have the following set up in your Koillection database:
-        * **Lacquer Type (Choice List):** You must create a Choice List named exactly **`Lacquer Type`** in Koillection. Add all your finishes (Creme, Holographic, etc.) to this list. The app will automatically load them!
-        * **Brand (Data Field):** Add a field named **`Brand`** to your items so the app can display the brand name next to the polish name.
-        * **Auto-Generated Fields:** When you tag a polish, this app will *automatically* create the **`Colour (Hex)`**, **`Secondary Colour (Hex)`**, and **`Finish (Colour Picker)`** fields for you! No need to create them manually.
-        
-        ---
         
         ### 📁 Getting Started
         * **Select a Collection:** Open the sidebar menu on the left and use the dropdown to choose which collection you want to work with. The app will instantly load all the polishes inside it!
@@ -366,13 +226,6 @@ if not st.session_state.hide_color_instructions:
         2. Use the color picker to choose a target color you want to find in your collection.
         3. Adjust the **Search Radius (Tolerance)** slider. A lower number finds exact matches, while a higher number finds similar shades.
         4. (Optional) Filter the results by specific finishes.
-        
-        ---
-        
-        ### 🎨 Nail Art Pairings
-        1. Go to the **Nail Art Pairings** tab.
-        2. Select a base polish you want to use.
-        3. The app will use mathematical color theory (HSV conversion) to suggest the perfect Complementary, Analogous, and Triadic matches from your actual collection!
         """)
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -410,7 +263,7 @@ except Exception as e:
     st.stop()
 
 # --- UI TABS ---
-tab1, tab2, tab3 = st.tabs(["🔍 Search Collection", "🏷️ Tag Existing Polish", "🎨 Nail Art Pairings"])
+tab1, tab2 = st.tabs(["🔍 Search Collection", "🏷️ Tag Existing Polish"])
 
 # TAB 1: SEARCHING
 with tab1:
@@ -443,7 +296,58 @@ with tab1:
                 st.write(f"### Found {len(matches)} matches:")
                 
                 for _, row in matches.iterrows():
-                    st.markdown(create_polish_card_html(row, distance_text=f"Color Match Distance: {row['Distance']:.1f}"), unsafe_allow_html=True)
+                    
+                    # Lightbox Image (Using main_image)
+                    img_html = ""
+                    img_b64 = get_image_base64(row['main_image'])
+                    if img_b64:
+                        img_html = (
+                            f'<label for="lb_{row["id"]}" style="cursor: zoom-in; margin: 0;">'
+                            f'<img src="data:image/jpeg;base64,{img_b64}" style="width: 70px; height: 70px; object-fit: cover; border-radius: 8px; margin-right: 15px; border: 1px solid #ddd; transition: transform 0.2s;" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+                            f'</label>'
+                            f'<input type="checkbox" id="lb_{row["id"]}" class="lb-checkbox">'
+                            f'<div class="lb-overlay">'
+                            f'<label for="lb_{row["id"]}" class="lb-bg-close"></label>'
+                            f'<img src="data:image/jpeg;base64,{img_b64}" style="position: relative; z-index: 2;">'
+                            f'</div>'
+                        )
+
+                    # Split Circle CSS Logic
+                    c1 = row["color_hex"]
+                    c2 = row["color_hex_2"] if pd.notna(row["color_hex_2"]) and row["color_hex_2"] != "" else c1
+                    circle_css = f"background: linear-gradient(135deg, {c1} 50%, {c2} 50%);"
+
+                    # Finish Badges HTML
+                    badges_html = ""
+                    if pd.notna(row['finish']) and row['finish'] != "":
+                        finishes = [f.strip() for f in row['finish'].split(",")]
+                        for f in finishes:
+                            badges_html += f'<span class="finish-badge">{f}</span>'
+                            
+                    # Location HTML
+                    location_html = ""
+                    if pd.notna(row['location']) and str(row['location']).strip() != "":
+                        location_html = f'<br><span style="color: #008080; font-size: 0.95em; font-weight: bold;">📍 Location: {row["location"]}</span>'
+
+                    display_title = f"{row['brand']} - {row['name']}" if pd.notna(row['brand']) and row['brand'] else row['name']
+                    item_url = f"{KOILLECTION_WEB_URL}/items/{row['id']}"
+
+                    final_html = (
+                        f'<div style="display: flex; align-items: center; margin-bottom: 10px; padding: 10px; background-color: #f9f9f9; border-radius: 8px; color: #333;">'
+                        f'{img_html}'
+                        f'<div style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #ddd; margin-right: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); {circle_css}"></div>'
+                        f'<div>'
+                        f'<a href="{item_url}" target="_blank" class="polish-link">'
+                        f'<strong style="font-size: 1.2em;">{display_title}</strong>'
+                        f'</a><br>'
+                        f'<span style="color: #666; font-size: 0.9em;">Color Match Distance: {row["Distance"]:.1f}</span>'
+                        f'{location_html}<br>'
+                        f'{badges_html}'
+                        f'</div>'
+                        f'</div>'
+                    )
+                    
+                    st.markdown(final_html, unsafe_allow_html=True)
             else:
                 st.info("No polishes found within this radius. Try increasing the tolerance slider or changing your finish filter!")
         else:
@@ -516,16 +420,6 @@ with tab2:
             
             selected_row = filtered_df[filtered_df['display_name'] == selected_display].iloc[0]
             
-            # --- FIX FOR COMPONENT MOUNTING BUG ---
-            if st.session_state.get("current_polish_id") != selected_row['id']:
-                st.session_state["current_polish_id"] = selected_row['id']
-                # Clear old state variables to be safe
-                for k in list(st.session_state.keys()):
-                    if k.startswith("img_click_") or k.startswith("last_click_"):
-                        del st.session_state[k]
-                time.sleep(0.05) # Tiny delay to let React catch up
-                st.rerun()
-            
             picker_key_1 = f"color_picker_1_{selected_row['id']}"
             picker_key_2 = f"color_picker_2_{selected_row['id']}"
             has_sec_key = f"has_sec_{selected_row['id']}"
@@ -563,51 +457,50 @@ with tab2:
                 if pd.notna(selected_row['main_image']) and selected_row['main_image']:
                     images.append(selected_row['main_image'])
                 if pd.notna(selected_row['gallery_images']) and selected_row['gallery_images']:
-                    for img in str(selected_row['gallery_images']).split(','):
-                        clean_img = img.strip()
-                        if clean_img and clean_img not in images:
-                            images.append(clean_img)
+                    for img in selected_row['gallery_images'].split(','):
+                        if img and img not in images:
+                            images.append(img)
+                
+                image_container = st.empty()
+                radio_container = st.empty()
                 
                 if images:
                     selected_img_idx = 0
-                    selected_img_path = images[0]
-                    
                     if len(images) > 1:
-                        img_options = ["Main Image"] + [f"Gallery Image {i}" for i in range(1, len(images))]
-                        selected_img_label = st.selectbox("📸 Select Image to Pick From:", img_options, key=f"img_sel_{selected_row['id']}")
+                        img_options = [f"Image {i+1}" for i in range(len(images))]
+                        with radio_container:
+                            selected_img_label = st.radio("📸 Switch Image:", img_options, horizontal=True, key=f"img_radio_{selected_row['id']}")
                         selected_img_idx = img_options.index(selected_img_label)
-                        selected_img_path = images[selected_img_idx]
                     
+                    selected_img_path = images[selected_img_idx]
                     pil_img = get_pil_image(selected_img_path)
                     
-                    if pil_img:
-                        st.write("👆 *Click the image to pick the color!*")
-                        pil_img.thumbnail((400, 800)) 
-                        
-                        # FIXED: Ultra-robust key that forces a fresh mount when the target changes!
-                        click_coords = streamlit_image_coordinates(
-                            pil_img, 
-                            key=f"img_click_{selected_row['id']}_{selected_img_idx}_{eyedropper_target}"
-                        )
-                        
-                        if click_coords and click_coords != st.session_state[last_click_key]:
-                            st.session_state[last_click_key] = click_coords
-                            x, y = click_coords["x"], click_coords["y"]
+                    with image_container:
+                        if pil_img:
+                            st.write("👆 *Click the image to pick the color!*")
+                            pil_img.thumbnail((350, 700)) 
                             
-                            if x < pil_img.width and y < pil_img.height:
-                                r, g, b = pil_img.getpixel((x, y))
-                                picked_hex = f"#{r:02x}{g:02x}{b:02x}"
+                            click_coords = streamlit_image_coordinates(pil_img, key=f"img_click_{selected_row['id']}_{selected_img_idx}")
+                            
+                            if click_coords and click_coords != st.session_state[last_click_key]:
+                                st.session_state[last_click_key] = click_coords
+                                x, y = click_coords["x"], click_coords["y"]
                                 
-                                if eyedropper_target == "Primary Color":
-                                    st.session_state[picker_key_1] = picked_hex
-                                else:
-                                    st.session_state[picker_key_2] = picked_hex
-                                    st.session_state[has_sec_key] = True 
-                                st.rerun() 
-                    else:
-                        st.info("Error loading image file.")
+                                if x < pil_img.width and y < pil_img.height:
+                                    r, g, b = pil_img.getpixel((x, y))
+                                    picked_hex = f"#{r:02x}{g:02x}{b:02x}"
+                                    
+                                    if eyedropper_target == "Primary Color":
+                                        st.session_state[picker_key_1] = picked_hex
+                                    else:
+                                        st.session_state[picker_key_2] = picked_hex
+                                        st.session_state[has_sec_key] = True 
+                                    st.rerun() 
+                        else:
+                            st.info("Error loading image file.")
                 else:
-                    st.info("No images found for this polish.")
+                    with image_container:
+                        st.info("No images found for this polish.")
 
             with picker_col:
                 st.subheader("🎨 Colors")
@@ -660,68 +553,5 @@ with tab2:
                 st.success("🎉 **All caught up!** Every polish in your current filter has a color assigned.")
             else:
                 st.warning("No polishes match your filter criteria.")
-    else:
-        st.warning("No polishes found in this collection.")
-
-# TAB 3: NAIL ART PAIRINGS
-with tab3:
-    st.header("🎨 Nail Art Pairings")
-    st.write("Select a base polish to see mathematically calculated color harmonies from your collection!")
-    
-    if not df.empty:
-        tagged_df = df.dropna(subset=['color_hex']).copy()
-        
-        if not tagged_df.empty:
-            tagged_df['display_name'] = tagged_df.apply(
-                lambda x: f"{x['brand']} - {x['name']}" if pd.notna(x['brand']) and x['brand'] else x['name'], axis=1
-            )
-            
-            selected_base = st.selectbox("Select Base Polish", tagged_df['display_name'].tolist(), key="base_polish_select")
-            base_row = tagged_df[tagged_df['display_name'] == selected_base].iloc[0]
-            
-            st.markdown("### Base Polish")
-            st.markdown(create_polish_card_html(base_row), unsafe_allow_html=True)
-            
-            # Calculate the math!
-            harmonies = get_color_harmonies(base_row['color_hex'])
-            
-            st.markdown("---")
-            st.markdown("### 🎯 Perfect Pairings")
-            
-            # Complementary
-            st.subheader("Complementary (High Contrast)")
-            st.write("Colors opposite each other on the color wheel. Great for bold, high-energy nail art!")
-            comp_hex = harmonies["Complementary"][0]
-            comp_match = find_closest_polish(comp_hex, tagged_df, exclude_id=base_row['id'])
-            if comp_match is not None:
-                st.markdown(create_polish_card_html(comp_match, distance_text=f"Match Distance: {comp_match['Dist']:.1f}", math_color=comp_hex), unsafe_allow_html=True)
-                
-            st.markdown("<br>", unsafe_allow_html=True)
-                
-            # Analogous
-            st.subheader("Analogous (Harmonious & Blended)")
-            st.write("Colors next to each other on the color wheel. Perfect for smooth gradients and ombre designs!")
-            col1, col2 = st.columns(2)
-            ana_hexes = harmonies["Analogous"]
-            for i, a_hex in enumerate(ana_hexes):
-                a_match = find_closest_polish(a_hex, tagged_df, exclude_id=base_row['id'])
-                with [col1, col2][i]:
-                    if a_match is not None:
-                        st.markdown(create_polish_card_html(a_match, distance_text=f"Match Distance: {a_match['Dist']:.1f}", math_color=a_hex), unsafe_allow_html=True)
-                        
-            st.markdown("<br>", unsafe_allow_html=True)
-                        
-            # Triadic
-            st.subheader("Triadic (Vibrant & Balanced)")
-            st.write("Three colors evenly spaced around the color wheel. Excellent for colorful, dynamic patterns!")
-            col1, col2 = st.columns(2)
-            tri_hexes = harmonies["Triadic"]
-            for i, t_hex in enumerate(tri_hexes):
-                t_match = find_closest_polish(t_hex, tagged_df, exclude_id=base_row['id'])
-                with [col1, col2][i]:
-                    if t_match is not None:
-                        st.markdown(create_polish_card_html(t_match, distance_text=f"Match Distance: {t_match['Dist']:.1f}", math_color=t_hex), unsafe_allow_html=True)
-        else:
-            st.info("You need to tag some polishes with colors first! Go to the Tagging tab.")
     else:
         st.warning("No polishes found in this collection.")

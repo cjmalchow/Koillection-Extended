@@ -9,17 +9,9 @@ import textwrap
 import json
 import urllib.request
 import time
-import uuid
-from sqlalchemy import text
 from PIL import Image, ImageDraw, ImageFont
 
 st.set_page_config(page_title="Nail Polish Locator", layout="wide")
-
-# --- SESSION STATE INITIALIZATION (GOLDEN RULE) ---
-if "hide_instructions" not in st.session_state:
-    st.session_state.hide_instructions = False
-if "view_mode" not in st.session_state:
-    st.session_state.view_mode = "Visual Grid (Images)"
 
 # --- FONT DOWNLOADER ---
 @st.cache_resource(show_spinner="📥 Downloading Google Fonts...")
@@ -117,8 +109,7 @@ def load_settings():
         "title": "💅 Storage Grid Visualizer", 
         "display_fields": ["Name"], 
         "field_formats": {},
-        "sticker_settings": {},
-        "backup_color": "#FF5722"
+        "sticker_settings": {}
     }
 
 def save_settings(settings):
@@ -131,27 +122,13 @@ app_title = app_settings.get("title", "💅 Storage Grid Visualizer")
 display_fields = app_settings.get("display_fields", ["Name"])
 field_formats = app_settings.get("field_formats", {})
 sticker_settings = app_settings.get("sticker_settings", {})
-backup_color = app_settings.get("backup_color", "#FF5722")
-
-if not box_config and not st.session_state.hide_instructions:
-    st.session_state.hide_instructions = False
-elif box_config and "hide_instructions_toggled" not in st.session_state:
-    st.session_state.hide_instructions = True
-    st.session_state.hide_instructions_toggled = True
 
 # --- DATABASE CONNECTION & DATA PROCESSING ---
-def get_db_url():
-    # This dynamically builds the URL using the environment variables from docker-compose!
-    user = os.getenv("DB_USER", "koillection_user")
-    password = os.getenv("DB_PASSWORD", "local_polish_vault_2026")
-    host = os.getenv("DB_HOST", "db")
-    port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "koillection")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
-
 @st.cache_data(ttl=0, show_spinner="🔄 Fetching latest items from Koillection...")
 def load_data():
-    conn = st.connection("koillection_db", type="sql", url=get_db_url())
+    # This will use the Production URL if it exists, otherwise it defaults to the Sandbox URL!
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:password@postgresql:5432/koillection")
+    conn = st.connection("koillection_db", type="sql", url=db_url)
     
     query = """
     SELECT i.id::text AS id, i.name, i.image, d.label, d.value
@@ -167,7 +144,7 @@ all_custom_fields = set()
 for _, row in df.iterrows():
     iid = str(row['id'])
     if iid not in items_data:
-        items_data[iid] = {"id": iid, "name": str(row['name']), "image": row['image'], "primary_location": "", "other_locations": "", "fields": {}}
+        items_data[iid] = {"name": str(row['name']), "image": row['image'], "location": "", "fields": {}}
     
     lbl = row['label']
     val = row['value']
@@ -176,17 +153,11 @@ for _, row in df.iterrows():
         lbl_str = str(lbl).strip()
         val_str = str(val).strip()
         
-        # Strictly separate Primary Location from Other Locations (Backups)
-        if lbl_str.lower() == 'location':
-            if items_data[iid]["primary_location"]:
-                items_data[iid]["primary_location"] += f", {val_str}"
+        if 'location' in lbl_str.lower():
+            if items_data[iid]["location"]:
+                items_data[iid]["location"] += f", {val_str}"
             else:
-                items_data[iid]["primary_location"] = val_str
-        elif lbl_str.lower() == 'other location(s)':
-            if items_data[iid]["other_locations"]:
-                items_data[iid]["other_locations"] += f", {val_str}"
-            else:
-                items_data[iid]["other_locations"] = val_str
+                items_data[iid]["location"] = val_str
         else:
             items_data[iid]["fields"][lbl_str] = val_str
             all_custom_fields.add(lbl_str)
@@ -197,61 +168,8 @@ display_fields = [f for f in display_fields if f in available_fields]
 if not display_fields:
     display_fields = ["Name"]
 
-# --- DATABASE UPDATE HELPER ---
-def update_item_field(item_id, label, new_value):
-    conn = st.connection("koillection_db", type="sql", url=get_db_url())
-    
-    with conn.session as s:
-        # GOLDEN RULE: CAST(:id AS text) to prevent Emoji bug!
-        check_query = text("""
-            SELECT id FROM koi_datum 
-            WHERE item_id = CAST(:id AS text) AND label = :label
-            LIMIT 1
-        """)
-        result = s.execute(check_query, {"id": item_id, "label": label}).fetchone()
-        
-        if result:
-            update_query = text("""
-                UPDATE koi_datum 
-                SET value = :val, updated_at = NOW()
-                WHERE id = CAST(:datum_id AS text)
-            """)
-            s.execute(update_query, {"val": new_value, "datum_id": result[0]})
-        else:
-            if new_value.strip(): # Only insert if there's actually a value
-                new_id = str(uuid.uuid4())
-                # FIX: Added 'final_visibility' to the INSERT columns and 'public' to the VALUES!
-                insert_query = text("""
-                    INSERT INTO koi_datum (id, item_id, label, value, type, position, created_at, updated_at, visibility, final_visibility)
-                    VALUES (CAST(:id AS text), CAST(:item_id AS text), :label, :val, 'text', 0, NOW(), NOW(), 'public', 'public')
-                """)
-                s.execute(insert_query, {"id": new_id, "item_id": item_id, "label": label, "val": new_value})
-        s.commit()
-# --- POP-UP DIALOGS ---
-@st.dialog("🎯 Assign Polish to Slot")
-def assign_dialog(box_name, col, row):
-    slot_name = f"{box_name}-{col}{row}"
-    st.markdown(f"Assign a polish to **{slot_name}**")
-    
-    unassigned = []
-    for iid, data in items_data.items():
-        loc = data["primary_location"].strip()
-        if not loc or loc in other_containers:
-            unassigned.append((iid, data["name"], loc))
-    
-    if not unassigned:
-        st.warning("No unassigned polishes found! All polishes are currently in structured boxes.")
-        return
-        
-    options = {iid: f"{name} (Current: {loc or 'None'})" for iid, name, loc in unassigned}
-    selected_id = st.selectbox("Select Polish", options=list(options.keys()), format_func=lambda x: options[x])
-    
-    if st.button("Assign to Slot", type="primary", use_container_width=True):
-        with st.spinner("Updating database..."):
-            update_item_field(selected_id, "Location", slot_name)
-            st.cache_data.clear()
-            time.sleep(0.5)
-        st.rerun()
+
+# --- POP-UP DIALOGS (NEW!) ---
 
 @st.dialog("Change App Title")
 def edit_title_dialog(current_title):
@@ -282,6 +200,7 @@ def grid_text_dialog():
         st.markdown(f"<strong style='color: #26a69a; font-size: 1.1em;'>{f}</strong>", unsafe_allow_html=True)
         current_fmt = field_formats.get(f, {"bold": False, "italic": False, "underline": False, "align": "Center", "size": "Auto-Fit"})
         
+        # Because we are in a wide dialog, we can put all 5 settings in one row!
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1: b = st.checkbox("Bold", value=current_fmt.get("bold", False), key=f"b_{f}")
         with col2: i = st.checkbox("Italic", value=current_fmt.get("italic", False), key=f"i_{f}")
@@ -291,15 +210,11 @@ def grid_text_dialog():
         
         new_formats[f] = {"bold": b, "italic": i, "underline": u, "align": align, "size": size}
         st.markdown("<hr style='margin: 10px 0; opacity: 0.2;'>", unsafe_allow_html=True)
-        
-    st.markdown("### Backup Polish Settings")
-    new_backup_color = st.color_picker("Backup Polish Text Color", value=backup_color, help="Polishes from 'Other Location(s)' will use this color.")
     
     if st.button("Save Display Settings", type="primary", use_container_width=True):
         with st.spinner("Saving display settings..."):
             app_settings["display_fields"] = selected_fields
             app_settings["field_formats"] = new_formats
-            app_settings["backup_color"] = new_backup_color
             save_settings(app_settings)
             time.sleep(0.5)
         st.rerun()
@@ -317,6 +232,7 @@ def sticker_customization_dialog():
     ]
     new_h_font = st.selectbox("Heading Font", font_options, index=font_options.index(sticker_settings.get("heading_font", "Roboto")))
     
+    # --- LIVE FONT PREVIEW ---
     preview_font_url = new_h_font.replace(" ", "+")
     preview_text = new_h_template.replace("{box}", "1")
     if not preview_text.strip():
@@ -359,8 +275,6 @@ def sticker_customization_dialog():
     with col_c5: new_text_color = st.color_picker("Grid Text", value=sticker_settings.get("text_color", "#000000"))
     
     st.markdown("<br>", unsafe_allow_html=True)
-    new_sticker_backup_color = st.color_picker("Backup Polish Text Color", value=sticker_settings.get("backup_color", "#FF0000"), help="Color for polishes stored in 'Other Location(s)'.")
-    
     if st.button("Save Sticker Settings", type="primary", use_container_width=True):
         with st.spinner("Saving sticker settings..."):
             app_settings["sticker_settings"] = {
@@ -373,8 +287,7 @@ def sticker_customization_dialog():
                 "bg_color": new_bg_color,
                 "grid_bg_color": new_grid_bg_color,
                 "grid_color": new_grid_color,
-                "text_color": new_text_color,
-                "backup_color": new_sticker_backup_color
+                "text_color": new_text_color
             }
             save_settings(app_settings)
             time.sleep(0.5)
@@ -382,12 +295,14 @@ def sticker_customization_dialog():
         st.session_state.view_mode = "Sticker Grid (Printable)"
         st.rerun()
 
+
 # --- SIDEBAR ---
 st.sidebar.header("⚙️ Global Settings")
 
 if font_errors:
     st.sidebar.error("⚠️ Font Download Failed:\n" + "\n".join(font_errors))
 
+# Buttons to launch our new pop-up dialogs!
 if st.sidebar.button("👁️ Customize Grid Text", use_container_width=True):
     grid_text_dialog()
     
@@ -397,6 +312,7 @@ if st.sidebar.button("🎨 Customize Sticker Design", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.header("📦 Box Management")
 
+# 1. ADD A NEW BOX
 with st.sidebar.expander("➕ Add a New Box", expanded=False):
     st.markdown("<small>Define the physical size of a new storage box.</small>", unsafe_allow_html=True)
     new_box = st.text_input("New Box Number/Name", help="E.g., type '1' if your location is '1-A1'.")
@@ -412,6 +328,7 @@ with st.sidebar.expander("➕ Add a New Box", expanded=False):
             time.sleep(1)
             st.rerun()
 
+# 2. EDIT OR DELETE AN EXISTING BOX
 if box_config:
     with st.sidebar.expander("✏️ Edit / Delete a Box", expanded=False):
         st.markdown("<small>Modify or remove an existing box.</small>", unsafe_allow_html=True)
@@ -494,6 +411,9 @@ with col3:
         edit_title_dialog(app_title)
 
 # --- USER FRIENDLY INSTRUCTIONS ---
+if "hide_instructions" not in st.session_state:
+    st.session_state.hide_instructions = bool(box_config)
+
 if not st.session_state.hide_instructions:
     with st.expander("ℹ️ How to use the Locator Guide", expanded=True):
         st.markdown("""
@@ -516,11 +436,12 @@ if not st.session_state.hide_instructions:
         ---
         
         ### 🚀 Using the Locator
-        * **Click-to-Assign:** In the Visual Grid view, click the ➕ button on any empty slot to instantly assign an unboxed polish to that location!
-        * **Spreadsheet View:** Use the new Spreadsheet View to rapidly type in locations and bulk-save them to the database.
         * **Customize Text:** Click **👁️ Customize Grid Text** in the sidebar to choose what information (Brand, Name, Color, etc.) is displayed on the grid and stickers. 
         * **Customize Stickers:** Click **🎨 Customize Sticker Design** in the sidebar to change fonts, colors, and heading text for your printable stickers!
         * **Blackout Spaces:** If your physical box has broken slots or dividers, use the **✏️ Edit Box** menu to mark those spaces as "Unusable". They will appear solid black on your grid!
+        * **Visual Grid:** By default, you will see a visual representation of your boxes with item images. Use the tabs at the top to switch between different boxes.
+        * **Printable Stickers:** Select **"Sticker Grid (Printable)"** at the top of the page. This strips away the dark background and images, giving you a clean, ink-friendly table.
+        * **Download & Print:** While in the Sticker Grid view, click the **"📥 Download Box Sticker"** button to save a high-resolution PNG image of the grid, perfect for printing and attaching to the lid or inside of your physical box!
         """)
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -551,129 +472,101 @@ def get_image_base64(img_path):
 # --- PROCESSING ---
 boxes = {}
 other_containers = {}
+
+# Create a mapping for case-insensitive box name lookups
 box_name_map = {}
 
 for b_name, b_dims in box_config.items():
     cols_str = "".join([chr(65 + i) for i in range(b_dims['cols'])])
     boxes[b_name] = {r: {c: None for c in cols_str} for r in range(1, b_dims['rows'] + 1)}
+    # Store a lowercase version of the box name so we can match it easily
     box_name_map[str(b_name).strip().lower()] = b_name
 
+# NEW FORGIVING REGEX: Allows spaces around the hyphen and inside the box name!
 pattern = re.compile(r'^\s*([a-zA-Z0-9\s]+?)\s*-\s*([a-zA-Z])\s*(\d+)\s*$', re.IGNORECASE)
 
-def assign_to_boxes(loc_string, item, is_backup):
-    if not loc_string: return
-    locations = [l.strip() for l in loc_string.split(',')]
+for item in items_data.values():
+    raw_loc = item['location'].strip() if item['location'] else "Unassigned"
+    locations = [l.strip() for l in raw_loc.split(',')]
+    
     for loc in locations:
         if not loc: continue
         match = pattern.match(loc)
+        
         if match:
+            # Clean up the extracted text
             parsed_box_name = str(match.group(1)).strip().lower()
             col = match.group(2).upper()
             row_num = int(match.group(3))
             
+            # 1. Check if the box exists (case-insensitive)
             if parsed_box_name in box_name_map:
                 actual_box_name = box_name_map[parsed_box_name]
+                
+                # 2. Check if the Row and Column actually exist inside this box's dimensions
                 if row_num in boxes[actual_box_name] and col in boxes[actual_box_name][row_num]:
-                    boxes[actual_box_name][row_num][col] = {"item": item, "is_backup": is_backup}
+                    boxes[actual_box_name][row_num][col] = item
                 else:
+                    # The box exists, but the coordinates are out of bounds!
                     if loc not in other_containers: other_containers[loc] = []
-                    other_containers[loc].append({"item": item, "is_backup": is_backup})
+                    other_containers[loc].append(item)
             else:
+                # The box name doesn't match any configured boxes
                 if loc not in other_containers: other_containers[loc] = []
-                other_containers[loc].append({"item": item, "is_backup": is_backup})
+                other_containers[loc].append(item)
         else:
+            # The text didn't match the Box-A1 format at all
             if loc not in other_containers: other_containers[loc] = []
-            other_containers[loc].append({"item": item, "is_backup": is_backup})
-
-for item in items_data.values():
-    assign_to_boxes(item["primary_location"], item, is_backup=False)
-    assign_to_boxes(item["other_locations"], item, is_backup=True)
-
-# --- NEXT AVAILABLE SLOT ALGORITHM ---
-def get_next_available_slot():
-    def natural_keys(text):
-        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(text))]
-    
-    for b_name in sorted(boxes.keys(), key=natural_keys):
-        dims = box_config[b_name]
-        cols = [chr(65 + i) for i in range(dims['cols'])]
-        rows = dims['rows']
-        unusable = dims.get("unusable", [])
-        
-        for r in range(1, rows + 1):
-            for c in cols:
-                if f"{c}{r}" in unusable:
-                    continue
-                if boxes[b_name][r][c] is None:
-                    return f"{b_name}-{c}{r}"
-    return "No empty slots!"
-
+            other_containers[loc].append(item)
 # --- UI GENERATION ---
-view_mode = st.radio("Select Grid View:", ["Visual Grid (Images)", "Sticker Grid (Printable)", "Spreadsheet View (Bulk Edit)"], horizontal=True, key="view_mode")
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = "Visual Grid (Images)"
+
+view_mode = st.radio("Select Grid View:", ["Visual Grid (Images)", "Sticker Grid (Printable)"], horizontal=True, key="view_mode")
 
 html_size_map = {"Small": "9px", "Medium": "11px", "Large": "14px", "Auto-Fit": "12px"}
 print_size_map = {"Small": 20, "Medium": 28, "Large": 36}
 
-def render_interactive_grid(box_num, box_data):
+def get_html_grid(box_num, box_data):
     dims = box_config[box_num]
-    cols = [chr(65 + i) for i in range(dims['cols'])]
+    cols = "".join([chr(65 + i) for i in range(dims['cols'])])
     rows = dims['rows']
     unusable_cells = dims.get("unusable", [])
-    
-    header_cols = st.columns(len(cols) + 1)
-    for i, c in enumerate(cols):
-        with header_cols[i+1]:
-            st.markdown(f"<div style='text-align:center; font-weight:bold; padding-bottom: 10px;'>{c}</div>", unsafe_allow_html=True)
-    
-    for r in range(1, rows + 1):
-        row_cols = st.columns(len(cols) + 1)
-        with row_cols[0]:
-            st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 60px;'>{r}</div>", unsafe_allow_html=True)
         
-        for i, c in enumerate(cols):
-            with row_cols[i+1]:
-                cell_id = f"{c}{r}"
-                slot_data = box_data[r][c]
+    html = "<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: white;'>"
+    html += "<tr><th style='width: 40px;'></th>" + "".join([f"<th style='text-align: center; padding: 5px;'>{c}</th>" for c in cols]) + "</tr>"
+    for r in range(1, rows + 1):
+        html += f"<tr><th style='text-align: center; padding: 10px;'>{r}</th>"
+        for c in cols:
+            item = box_data[r][c]
+            cell_id = f"{c}{r}"
+            cell_style = "border: 1px solid #555; height: 140px; position: relative; padding: 0;"
+            
+            if cell_id in unusable_cells:
+                html += f"<td style='{cell_style} background: #000000;'></td>"
+            elif item is None:
+                html += f"<td style='{cell_style} background: #222;'></td>"
+            else:
+                img_b64, mime = get_image_base64(item["image"])
+                img_tag = f"<img src='data:{mime};base64,{img_b64}' style='width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0;'>" if img_b64 else ""
                 
-                if cell_id in unusable_cells:
-                    st.markdown("<div style='background-color: black; height: 140px; border: 1px solid #555; border-radius: 5px;'></div>", unsafe_allow_html=True)
-                elif slot_data is None:
-                    st.markdown("<div style='height: 45px;'></div>", unsafe_allow_html=True)
-                    if st.button("➕", key=f"btn_{box_num}_{cell_id}", help=f"Assign polish to {box_num}-{cell_id}", use_container_width=True):
-                        assign_dialog(box_num, c, r)
-                else:
-                    item = slot_data["item"]
-                    is_backup = slot_data["is_backup"]
-                    
-                    img_b64, mime = get_image_base64(item["image"])
-                    img_tag = f"<img src='data:{mime};base64,{img_b64}' style='width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; border-radius: 5px;'>" if img_b64 else ""
-                    
-                    text_color = backup_color if is_backup else "white"
-                    
-                    text_html = ""
-                    for f in display_fields:
-                        val = item['name'] if f == "Name" else item['fields'].get(f, "")
-                        if val:
-                            fmt = field_formats.get(f, {})
-                            fw = "bold" if fmt.get("bold") else "normal"
-                            fs = "italic" if fmt.get("italic") else "normal"
-                            td = "underline" if fmt.get("underline") else "none"
-                            ta = fmt.get("align", "Center").lower()
-                            fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
-                            
-                            # Make the Name clickable!
-                            if f == "Name":
-                                koillection_url = os.getenv("KOILLECTION_URL", "http://localhost:8081")
-                                val = f"<a href='{koillection_url}/items/{item['id']}' target='_blank' style='color: inherit; text-decoration: inherit;'>{val}</a>"
-                                
-                            text_html += f"<div style='font-size: {fz}; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color:{text_color}; text-shadow: 1px 1px 2px black; width: 100%;'>{val}</div>"
-                    
-                    # Append Primary Location if it's a backup
-                    if is_backup and item["primary_location"]:
-                        text_html += f"<div style='font-size: 10px; color:{text_color}; text-shadow: 1px 1px 2px black; text-align:center; margin-top: 2px;'>(Primary: {item['primary_location']})</div>"
-                    
-                    card_html = f"<div style='border: 1px solid #555; border-radius: 5px; height: 140px; position: relative; padding: 0; background: #222; overflow: hidden;'>{img_tag}<div style='position: relative; z-index: 1; padding: 5px; display: flex; flex-direction: column; align-items: center;'><div style='background: rgba(0,0,0,0.7); display: inline-block; padding: 3px 6px; border-radius: 4px; width: 90%;'>{text_html}</div></div></div>"
-                    st.markdown(card_html, unsafe_allow_html=True)
+                text_html = ""
+                for f in display_fields:
+                    val = item['name'] if f == "Name" else item['fields'].get(f, "")
+                    if val:
+                        fmt = field_formats.get(f, {})
+                        fw = "bold" if fmt.get("bold") else "normal"
+                        fs = "italic" if fmt.get("italic") else "normal"
+                        td = "underline" if fmt.get("underline") else "none"
+                        ta = fmt.get("align", "Center").lower()
+                        fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
+                        
+                        text_html += f"<div style='font-size: {fz}; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color:white; text-shadow: 1px 1px 2px black; width: 100%;'>{val}</div>"
+                
+                html += f"<td style='{cell_style} background: #222;'>{img_tag}<div style='position: relative; z-index: 1; padding: 5px; display: flex; flex-direction: column; align-items: center;'><div style='background: rgba(0,0,0,0.7); display: inline-block; padding: 3px 6px; border-radius: 4px; width: 90%;'>{text_html}</div></div></td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
 
 def get_sticker_html_grid(box_num, box_data):
     dims = box_config[box_num]
@@ -692,8 +585,7 @@ def get_sticker_html_grid(box_num, box_data):
     bg_color = ss.get("bg_color", "#FFFFFF")
     grid_bg_color = ss.get("grid_bg_color", "#008080")
     grid_color = ss.get("grid_color", "#000000")
-    base_text_color = ss.get("text_color", "#000000")
-    sticker_backup_color = ss.get("backup_color", "#FF0000")
+    text_color = ss.get("text_color", "#000000")
     
     heading_text = h_temp.replace("{box}", str(box_num))
     font_family_url = h_font.replace(" ", "+")
@@ -702,7 +594,7 @@ def get_sticker_html_grid(box_num, box_data):
     
     html += f"<div style='width: 100%; max-width: 800px; background: {bg_color}; padding: 20px; box-sizing: border-box;'>"
     html += f"<h2 style='text-align: center; font-size: 3em; color: {h_color}; font-family: \"{h_font}\", sans-serif; font-weight: {h_bold}; font-style: {h_italic}; text-decoration: {h_underline}; margin-top: 0; margin-bottom: 15px;'>{heading_text}</h2>"
-    html += f"<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: {base_text_color}; font-family: Arial, sans-serif;'>"
+    html += f"<table style='width: 100%; border-collapse: collapse; table-layout: fixed; color: {text_color}; font-family: Arial, sans-serif;'>"
     
     html += f"<tr><th style='width: {col_width}; border: 1px solid {grid_color}; background: {grid_bg_color}; color: white;'></th>"
     for c in cols:
@@ -712,26 +604,19 @@ def get_sticker_html_grid(box_num, box_data):
     for r in range(1, rows + 1):
         html += f"<tr><th style='border: 1px solid {grid_color}; background: {grid_bg_color}; color: white; padding: 10px 2px;'>{r}</th>"
         for c in cols:
-            slot_data = box_data[r][c]
+            item = box_data[r][c]
             cell_id = f"{c}{r}"
             
             if cell_id in unusable_cells:
                 html += f"<td style='border: 1px solid {grid_color}; height: 120px; background: #000000;'></td>"
             else:
                 html += f"<td style='border: 1px solid {grid_color}; height: 120px; vertical-align: top; padding: 5px; overflow: hidden;'>"
-                html += f"<div style='font-weight: bold; font-size: 12px; color: {base_text_color};'>{c}{r}</div>"
+                html += f"<div style='font-weight: bold; font-size: 12px; color: {text_color};'>{c}{r}</div>"
                 
-                if slot_data:
-                    item = slot_data["item"]
-                    is_backup = slot_data["is_backup"]
-                    current_text_color = sticker_backup_color if is_backup else base_text_color
-                    
+                if item:
                     for f in display_fields:
                         val = item['name'] if f == "Name" else item['fields'].get(f, "")
                         if val:
-                            if f == "Name" and is_backup and item["primary_location"]:
-                                val += f" (Primary: {item['primary_location']})"
-                                
                             fmt = field_formats.get(f, {})
                             fw = "bold" if fmt.get("bold") else "normal"
                             fs = "italic" if fmt.get("italic") else "normal"
@@ -739,7 +624,7 @@ def get_sticker_html_grid(box_num, box_data):
                             ta = fmt.get("align", "Center").lower()
                             fz = html_size_map.get(fmt.get("size", "Auto-Fit"))
                             
-                            html += f"<div style='font-size: {fz}; margin-top: 3px; word-wrap: break-word; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color: {current_text_color};'>{val}</div>"
+                            html += f"<div style='font-size: {fz}; margin-top: 3px; word-wrap: break-word; font-weight:{fw}; font-style:{fs}; text-decoration:{td}; text-align:{ta}; color: {text_color};'>{val}</div>"
                 
                 html += "</td>"
         html += "</tr>"
@@ -810,8 +695,7 @@ def get_sticker_image_bytes(box_num, box_data):
     bg_color = ss.get("bg_color", "#FFFFFF")
     grid_bg_color = ss.get("grid_bg_color", "#008080")
     grid_color = ss.get("grid_color", "#000000")
-    base_text_color = ss.get("text_color", "#000000")
-    sticker_backup_color = ss.get("backup_color", "#FF0000")
+    text_color = ss.get("text_color", "#000000")
 
     w, h = 1600, 1800 
     title_area = 150
@@ -884,7 +768,7 @@ def get_sticker_image_bytes(box_num, box_data):
 
     for r in range(1, rows + 1):
         for c_idx, c in enumerate(cols):
-            slot_data = box_data[r][c]
+            item = box_data[r][c]
             cell_id = f"{c}{r}"
             
             x0 = header_col_w + (c_idx * cell_w)
@@ -894,13 +778,9 @@ def get_sticker_image_bytes(box_num, box_data):
                 draw.rectangle([x0, y0, x0 + cell_w, y0 + cell_h], fill="#000000", outline=grid_color, width=4)
                 continue 
             
-            draw.text((x0 + 10, y0 + 10), cell_id, font=font_cell_id, fill=base_text_color)
+            draw.text((x0 + 10, y0 + 10), cell_id, font=font_cell_id, fill=text_color)
             
-            if slot_data:
-                item = slot_data["item"]
-                is_backup = slot_data["is_backup"]
-                current_text_color = sticker_backup_color if is_backup else base_text_color
-                
+            if item:
                 max_w = cell_w - 20
                 max_h = cell_h - 70 
                 
@@ -910,8 +790,6 @@ def get_sticker_image_bytes(box_num, box_data):
                     for f in display_fields:
                         val = item['name'] if f == "Name" else item['fields'].get(f, "")
                         if not val: continue
-                        if f == "Name" and is_backup and item["primary_location"]:
-                            val += f" (Primary: {item['primary_location']})"
                         
                         fmt = field_formats.get(f, {})
                         test_size_str = fmt.get("size", "Auto-Fit")
@@ -933,8 +811,6 @@ def get_sticker_image_bytes(box_num, box_data):
                 for f in display_fields:
                     val = item['name'] if f == "Name" else item['fields'].get(f, "")
                     if not val: continue
-                    if f == "Name" and is_backup and item["primary_location"]:
-                        val += f" (Primary: {item['primary_location']})"
                     
                     fmt = field_formats.get(f, {})
                     is_bold = fmt.get("bold", False)
@@ -960,10 +836,10 @@ def get_sticker_image_bytes(box_num, box_data):
                         else: 
                             x_draw = x0 + (cell_w - tw) / 2
                             
-                        draw.text((x_draw, y_text), line, font=font_text, fill=current_text_color)
+                        draw.text((x_draw, y_text), line, font=font_text, fill=text_color)
                         
                         if is_underline:
-                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill=current_text_color, width=2)
+                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill=text_color, width=2)
                         
                         y_text += th + 4
                     y_text += 4
@@ -972,75 +848,29 @@ def get_sticker_image_bytes(box_num, box_data):
     img.save(buf, format="PNG")
     return buf.getvalue()
 
-# --- MAIN VIEW RENDERING ---
+# --- TABS ---
 if not box_config:
     st.info("👈 Please configure your box sizes in the sidebar to get started!")
 elif df.empty:
     st.warning("⚠️ No items found in the database! Add some items in Koillection to get started.")
 else:
-    if st.session_state.view_mode == "Spreadsheet View (Bulk Edit)":
-        st.markdown("### 📝 Bulk Edit Locations")
-        st.info(f"💡 **Next Available Slot:** `{get_next_available_slot()}`")
-        
-        edit_df = pd.DataFrame([
-            {"ID": iid, "Name": data["name"], "Location": data["primary_location"], "Other Locations": data["other_locations"]}
-            for iid, data in items_data.items()
-        ])
-        
-        edited_df = st.data_editor(
-            edit_df,
-            column_config={
-                "ID": None,
-                "Name": st.column_config.TextColumn("Polish Name", disabled=True),
-                "Location": st.column_config.TextColumn("Location (e.g., 1-A1)"),
-                "Other Locations": st.column_config.TextColumn("Other Locations (Backups)")
-            },
-            use_container_width=True,
-            key="spreadsheet_editor"
-        )
-        
-        if st.button("💾 Save All Changes", type="primary"):
-            with st.spinner("Saving to database..."):
-                changes = 0
-                for index, row in edited_df.iterrows():
-                    old_loc = edit_df.loc[index, "Location"]
-                    new_loc = row["Location"]
-                    if old_loc != new_loc:
-                        update_item_field(row["ID"], "Location", new_loc)
-                        changes += 1
-                        
-                    old_other = edit_df.loc[index, "Other Locations"]
-                    new_other = row["Other Locations"]
-                    if old_other != new_other:
-                        update_item_field(row["ID"], "Other Location(s)", new_other)
-                        changes += 1
-                
-                if changes > 0:
-                    st.cache_data.clear()
-                    st.success(f"Successfully updated {changes} locations!")
-                    time.sleep(1)
-                    st.rerun()
+    all_tabs = [f"Box {b}" for b in sorted(boxes.keys())] + sorted(list(other_containers.keys()))
+    if all_tabs:
+        tabs = st.tabs(all_tabs)
+        box_keys = sorted(boxes.keys())
+
+        for i, b in enumerate(box_keys):
+            with tabs[i]:
+                if st.session_state.view_mode == "Sticker Grid (Printable)":
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        png_bytes = get_sticker_image_bytes(b, boxes[b])
+                        st.download_button(f"📥 Download Box {b} Sticker", png_bytes, f"box_{b}_sticker.png", "image/png")
+                    st.html(get_sticker_html_grid(b, boxes[b]))
                 else:
-                    st.info("No changes detected.")
-                    
-    else:
-        all_tabs = [f"Box {b}" for b in sorted(boxes.keys())] + sorted(list(other_containers.keys()))
-        if all_tabs:
-            tabs = st.tabs(all_tabs)
-            box_keys = sorted(boxes.keys())
+                    st.html(get_html_grid(b, boxes[b]))
 
-            for i, b in enumerate(box_keys):
-                with tabs[i]:
-                    if st.session_state.view_mode == "Sticker Grid (Printable)":
-                        col1, col2 = st.columns([1, 4])
-                        with col1:
-                            png_bytes = get_sticker_image_bytes(b, boxes[b])
-                            st.download_button(f"📥 Download Box {b} Sticker", png_bytes, f"box_{b}_sticker.png", "image/png")
-                        st.html(get_sticker_html_grid(b, boxes[b]))
-                    else:
-                        render_interactive_grid(b, boxes[b])
-
-            for i, c in enumerate(sorted(list(other_containers.keys()))):
-                with tabs[i + len(box_keys)]:
-                    st.subheader(f"Location: {c}")
-                    st.table(pd.DataFrame({"Polish Name": [slot["item"]['name'] for slot in other_containers[c]]}))
+        for i, c in enumerate(sorted(list(other_containers.keys()))):
+            with tabs[i + len(box_keys)]:
+                st.subheader(f"Location: {c}")
+                st.table(pd.DataFrame({"Polish Name": [item['name'] for item in other_containers[c]]}))
