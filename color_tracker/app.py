@@ -5,8 +5,9 @@ import os
 import base64
 import uuid
 import datetime
-import time
 import colorsys
+import json
+import time
 from sqlalchemy import text
 from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
@@ -14,14 +15,32 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 st.set_page_config(page_title="Smart Color Matcher", page_icon="💅", layout="wide")
 
 # --- SESSION STATE INITIALIZATION (GOLDEN RULE) ---
-if "hide_color_instructions" not in st.session_state:
-    st.session_state.hide_color_instructions = False
+if "current_polish_id" not in st.session_state:
+    st.session_state.current_polish_id = None
+if "last_click" not in st.session_state:
+    st.session_state.last_click = None
+# THE NEW SAFE STATE VAULT!
+if "vault" not in st.session_state:
+    st.session_state.vault = {}
 
 # ==========================================
-# ⚙️ CONFIGURATION
+# ⚙️ CONFIGURATION & SETTINGS
 # ==========================================
 KOILLECTION_WEB_URL = "http://localhost:8081" 
 IMAGE_DIR = "/app/public/uploads"
+SETTINGS_FILE = "settings.json"
+
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    return {"show_instructions": True, "last_collection_id": None}
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f)
+
+app_settings = load_settings()
 
 # --- DATABASE CONNECTION ---
 def get_db_url():
@@ -139,7 +158,6 @@ def fetch_polishes(collection_id):
         
     conn = st.connection("koillection_db", type="sql", url=get_db_url())
     
-    # DYNAMIC COLUMN CHECK: Find out exactly where Koillection hides the filenames!
     cols_df = conn.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'koi_datum'", ttl=0)
     datum_cols = cols_df['column_name'].tolist()
     
@@ -149,7 +167,6 @@ def fetch_polishes(collection_id):
     
     gallery_sql = f"COALESCE({', '.join(gallery_cols)})"
     
-    # FIXED: The bad koi_photo line is completely gone!
     query = f"""
     SELECT 
         i.id::text AS id, 
@@ -332,61 +349,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- USER FRIENDLY INSTRUCTIONS ---
-if not st.session_state.hide_color_instructions:
-    with st.expander("ℹ️ How to use the Color Tracker", expanded=True):
-        st.markdown("""
-        **Welcome to the Color Tracker!**  
-        This tool helps you assign exact colors to your nail polishes and search your collection for color matches.
-        
-        ### 📋 Required Koillection Setup
-        For this app to work its magic, make sure you have the following set up in your Koillection database:
-        * **Lacquer Type (Choice List):** You must create a Choice List named exactly **`Lacquer Type`** in Koillection. Add all your finishes (Creme, Holographic, etc.) to this list. The app will automatically load them!
-        * **Brand (Data Field):** Add a field named **`Brand`** to your items so the app can display the brand name next to the polish name.
-        * **Auto-Generated Fields:** When you tag a polish, this app will *automatically* create the **`Colour (Hex)`**, **`Secondary Colour (Hex)`**, and **`Finish (Colour Picker)`** fields for you! No need to create them manually.
-        
-        ---
-        
-        ### 📁 Getting Started
-        * **Select a Collection:** Open the sidebar menu on the left and use the dropdown to choose which collection you want to work with. The app will instantly load all the polishes inside it!
-        
-        ---
-        
-        ### 🏷️ Tagging Polishes
-        1. Go to the **Tag Existing Polish** tab.
-        2. **Quick Setup Mode:** By default, the `🚀 Quick Setup Mode` checkbox is checked. This automatically hides any polishes that already have a primary color assigned, allowing you to quickly power through your untagged collection without losing your place!
-        3. Select a polish from the dropdown menu. *(Tip: Use the "Filter Options" to narrow down the list by name, brand, or date!)*
-        4. **Pick a Color:** Click anywhere on the polish image to extract that exact color! You can pick a **Primary Color** and an optional **Secondary Color** (great for shifts or duochromes).
-        5. **Select Finishes:** Choose one or more finishes from the dropdown.
-        6. Click **Save to Database**. This will automatically update the item in Koillection and draw a color swatch next to it!
-        
-        ---
-        
-        ### 🔍 Searching by Color
-        1. Go to the **Search Collection** tab.
-        2. Use the color picker to choose a target color you want to find in your collection.
-        3. Adjust the **Search Radius (Tolerance)** slider. A lower number finds exact matches, while a higher number finds similar shades.
-        4. (Optional) Filter the results by specific finishes.
-        
-        ---
-        
-        ### 🎨 Nail Art Pairings
-        1. Go to the **Nail Art Pairings** tab.
-        2. Select a base polish you want to use.
-        3. The app will use mathematical color theory (HSV conversion) to suggest the perfect Complementary, Analogous, and Triadic matches from your actual collection!
-        """)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        _, center_col, _ = st.columns([1, 2, 1])
-        with center_col:
-            if st.button("👍 Got it! Hide Instructions", use_container_width=True):
-                st.session_state.hide_color_instructions = True
-                st.rerun()
-else:
-    if st.button("ℹ️ Show Instructions"):
-        st.session_state.hide_color_instructions = False
-        st.rerun()
+with st.expander("ℹ️ How to use the Color Tracker", expanded=False):
+    st.markdown("""
+    **Welcome to the Color Tracker!**  
+    This tool helps you assign exact colors to your nail polishes and search your collection for color matches.
+    
+    ### 📋 Required Koillection Setup
+    For this app to work its magic, make sure you have the following set up in your Koillection database:
+    * **Lacquer Type (Choice List):** You must create a Choice List named exactly **`Lacquer Type`** in Koillection. Add all your finishes (Creme, Holographic, etc.) to this list. The app will automatically load them!
+    * **Brand (Data Field):** Add a field named **`Brand`** to your items so the app can display the brand name next to the polish name.
+    * **Auto-Generated Fields:** When you tag a polish, this app will *automatically* create the **`Colour (Hex)`**, **`Secondary Colour (Hex)`**, and **`Finish (Colour Picker)`** fields for you! No need to create them manually.
+    
+    ---
+    
+    ### 📁 Getting Started
+    * **Select a Collection:** Use the dropdown menu right below these instructions to choose which collection you want to work with. The app will instantly load all the polishes inside it!
+    
+    ---
+    
+    ### 🏷️ Tagging Polishes
+    1. Go to the **Tag Existing Polish** tab.
+    2. **Quick Setup Mode:** By default, the `🚀 Quick Setup Mode` checkbox is checked. This automatically hides any polishes that already have a primary color assigned, allowing you to quickly power through your untagged collection without losing your place!
+    3. Select a polish from the dropdown menu. *(Tip: Use the "Filter Options" to narrow down the list by name, brand, or date!)*
+    4. **Pick a Color:** Click anywhere on the polish image to extract that exact color! You can pick a **Primary Color** and an optional **Secondary Color** (great for shifts or duochromes).
+    5. **Select Finishes:** Choose one or more finishes from the dropdown.
+    6. Click **Save to Database**. This will automatically update the item in Koillection and draw a color swatch next to it!
+    
+    ---
+    
+    ### 🔍 Searching by Color
+    1. Go to the **Search Collection** tab.
+    2. Use the color picker to choose a target color you want to find in your collection.
+    3. Adjust the **Search Radius (Tolerance)** slider. A lower number finds exact matches, while a higher number finds similar shades.
+    4. (Optional) Filter the results by specific finishes.
+    
+    ---
+    
+    ### 🎨 Nail Art Pairings
+    1. Go to the **Nail Art Pairings** tab.
+    2. Select a base polish you want to use.
+    3. The app will use mathematical color theory (HSV conversion) to suggest the perfect Complementary, Analogous, and Triadic matches from your actual collection!
+    """)
 
-# --- COLLECTION SELECTOR SIDEBAR ---
+# --- COLLECTION SELECTOR (MOVED TO MAIN PAGE) ---
 try:
     collections_df = fetch_collections()
 except Exception as e:
@@ -399,9 +404,26 @@ if collections_df.empty:
 
 collection_dict = dict(zip(collections_df['title'], collections_df['id']))
 
-st.sidebar.header("📁 Select Collection")
-selected_collection_title = st.sidebar.selectbox("Choose a collection to track:", list(collection_dict.keys()))
+st.markdown("### 📁 Select Collection")
+
+# --- LOAD LAST COLLECTION FROM MEMORY ---
+last_col_id = app_settings.get("last_collection_id")
+col_titles = list(collection_dict.keys())
+default_index = 0
+
+if last_col_id in collection_dict.values():
+    for i, title in enumerate(col_titles):
+        if collection_dict[title] == last_col_id:
+            default_index = i
+            break
+
+selected_collection_title = st.selectbox("Choose a collection to track:", col_titles, index=default_index, label_visibility="collapsed")
 selected_collection_id = collection_dict[selected_collection_title]
+
+# --- SAVE COLLECTION TO MEMORY IF CHANGED ---
+if selected_collection_id != last_col_id:
+    app_settings["last_collection_id"] = selected_collection_id
+    save_settings(app_settings)
 
 try:
     df = fetch_polishes(selected_collection_id)
@@ -480,10 +502,14 @@ with tab2:
 
         filtered_df = df.copy()
         
+        # --- CLEAN UP BRAND NAMES (Remove JSON brackets) ---
+        filtered_df['brand'] = filtered_df['brand'].apply(
+            lambda x: str(x).replace('["', '').replace('"]', '').replace('"', '') if pd.notna(x) else ""
+        )
+        
         if search_name:
             filtered_df = filtered_df[filtered_df['name'].str.contains(search_name, case=False, na=False)]
         if search_brand:
-            filtered_df['brand'] = filtered_df['brand'].fillna("")
             filtered_df = filtered_df[filtered_df['brand'].str.contains(search_brand, case=False, na=False)]
             
         if len(date_range) == 2:
@@ -516,39 +542,43 @@ with tab2:
             
             selected_row = filtered_df[filtered_df['display_name'] == selected_display].iloc[0]
             
-            # --- FIX FOR COMPONENT MOUNTING BUG ---
+            # --- WIPE THE VAULT WHEN A NEW POLISH IS SELECTED ---
             if st.session_state.get("current_polish_id") != selected_row['id']:
                 st.session_state["current_polish_id"] = selected_row['id']
-                # Clear old state variables to be safe
-                for k in list(st.session_state.keys()):
-                    if k.startswith("img_click_") or k.startswith("last_click_"):
-                        del st.session_state[k]
-                time.sleep(0.05) # Tiny delay to let React catch up
+                st.session_state.vault = {} 
+                st.session_state["last_click"] = None
                 st.rerun()
             
+            # --- ROBUST DATA SANITIZER FOR THE VAULT ---
+            def clean_hex(val, default):
+                if pd.isna(val) or not str(val).strip(): return default
+                val = str(val).strip()
+                if not val.startswith('#'): val = '#' + val
+                if len(val) != 7: return default
+                return val
+
+            if "color_1" not in st.session_state.vault:
+                st.session_state.vault["color_1"] = clean_hex(selected_row['color_hex'], "#FF0000")
+            
+            if "color_2" not in st.session_state.vault:
+                st.session_state.vault["color_2"] = clean_hex(selected_row['color_hex_2'], "#0000FF")
+            
+            if "has_sec" not in st.session_state.vault:
+                st.session_state.vault["has_sec"] = True if pd.notna(selected_row['color_hex_2']) and str(selected_row['color_hex_2']).strip() != "" else False
+                
+            if "finishes" not in st.session_state.vault:
+                current_finishes = []
+                if pd.notna(selected_row['finish']) and str(selected_row['finish']).strip() != "":
+                    raw_finishes = [f.strip() for f in str(selected_row['finish']).split(",")]
+                    # Ensure the finish actually exists in the dropdown options to prevent crashes
+                    current_finishes = [f for f in raw_finishes if f in FINISH_OPTIONS]
+                st.session_state.vault["finishes"] = current_finishes
+            
+            # --- DYNAMIC KEYS SO WIDGETS RESET PROPERLY ---
             picker_key_1 = f"color_picker_1_{selected_row['id']}"
             picker_key_2 = f"color_picker_2_{selected_row['id']}"
             has_sec_key = f"has_sec_{selected_row['id']}"
             finish_key = f"finish_{selected_row['id']}"
-            last_click_key = f"last_click_{selected_row['id']}"
-            
-            if picker_key_1 not in st.session_state:
-                st.session_state[picker_key_1] = selected_row['color_hex'] if pd.notna(selected_row['color_hex']) else "#FF0000"
-            
-            if picker_key_2 not in st.session_state:
-                st.session_state[picker_key_2] = selected_row['color_hex_2'] if pd.notna(selected_row['color_hex_2']) and selected_row['color_hex_2'] != "" else "#0000FF"
-            
-            if has_sec_key not in st.session_state:
-                st.session_state[has_sec_key] = True if pd.notna(selected_row['color_hex_2']) and selected_row['color_hex_2'] != "" else False
-                
-            if finish_key not in st.session_state:
-                current_finishes = []
-                if pd.notna(selected_row['finish']) and selected_row['finish'] != "":
-                    current_finishes = [f.strip() for f in selected_row['finish'].split(",")]
-                st.session_state[finish_key] = current_finishes
-
-            if last_click_key not in st.session_state:
-                st.session_state[last_click_key] = None
             
             img_col, picker_col = st.columns([1, 1]) 
             
@@ -584,24 +614,28 @@ with tab2:
                         st.write("👆 *Click the image to pick the color!*")
                         pil_img.thumbnail((400, 800)) 
                         
-                        # FIXED: Ultra-robust key that forces a fresh mount when the target changes!
+                        # The key dynamically changes when you swap images, forcing a clean, lag-free remount!
                         click_coords = streamlit_image_coordinates(
                             pil_img, 
-                            key=f"img_click_{selected_row['id']}_{selected_img_idx}_{eyedropper_target}"
+                            key=f"img_click_{selected_row['id']}_{selected_img_idx}"
                         )
                         
-                        if click_coords and click_coords != st.session_state[last_click_key]:
-                            st.session_state[last_click_key] = click_coords
+                        if click_coords and click_coords != st.session_state.get("last_click"):
+                            st.session_state["last_click"] = click_coords
                             x, y = click_coords["x"], click_coords["y"]
                             
                             if x < pil_img.width and y < pil_img.height:
                                 r, g, b = pil_img.getpixel((x, y))
                                 picked_hex = f"#{r:02x}{g:02x}{b:02x}"
                                 
+                                # --- THE FIX: UPDATE BOTH THE VAULT AND THE WIDGET STATE ---
                                 if eyedropper_target == "Primary Color":
-                                    st.session_state[picker_key_1] = picked_hex
+                                    st.session_state.vault["color_1"] = picked_hex
+                                    st.session_state[picker_key_1] = picked_hex 
                                 else:
-                                    st.session_state[picker_key_2] = picked_hex
+                                    st.session_state.vault["color_2"] = picked_hex
+                                    st.session_state[picker_key_2] = picked_hex 
+                                    st.session_state.vault["has_sec"] = True 
                                     st.session_state[has_sec_key] = True 
                                 st.rerun() 
                     else:
@@ -611,17 +645,24 @@ with tab2:
 
             with picker_col:
                 st.subheader("🎨 Colors")
-                color_1 = st.color_picker("Primary Color", key=picker_key_1)
                 
-                has_sec = st.checkbox("Add Secondary Color (Shifts/Duochromes)", key=has_sec_key)
+                # WIDGETS READ FROM AND WRITE TO THE VAULT (WITH DYNAMIC KEYS!)
+                color_1 = st.color_picker("Primary Color", value=st.session_state.vault["color_1"], key=picker_key_1)
+                st.session_state.vault["color_1"] = color_1
+                
+                has_sec = st.checkbox("Add Secondary Color (Shifts/Duochromes)", value=st.session_state.vault["has_sec"], key=has_sec_key)
+                st.session_state.vault["has_sec"] = has_sec
+                
                 if has_sec:
-                    color_2 = st.color_picker("Secondary Color", key=picker_key_2)
+                    color_2 = st.color_picker("Secondary Color", value=st.session_state.vault["color_2"], key=picker_key_2)
+                    st.session_state.vault["color_2"] = color_2
                 else:
                     color_2 = "" 
                 
                 st.markdown("---")
                 st.subheader("✨ Finish")
-                selected_finishes = st.multiselect("Select Polish Finishes", FINISH_OPTIONS, key=finish_key)
+                selected_finishes = st.multiselect("Select Polish Finishes", FINISH_OPTIONS, default=st.session_state.vault["finishes"], key=finish_key)
+                st.session_state.vault["finishes"] = selected_finishes
                 
                 st.write("") 
                 
@@ -650,10 +691,9 @@ with tab2:
                         
                         if success:
                             st.success(f"Successfully updated {selected_display}!")
-                            for key in [picker_key_1, picker_key_2, has_sec_key, finish_key, last_click_key]:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            time.sleep(1)
+                            st.session_state.vault = {}
+                            st.session_state["last_click"] = None
+                            time.sleep(0.5)
                             st.rerun()
         else:
             if quick_setup and not (search_name or search_brand or is_date_filtered):
@@ -672,8 +712,12 @@ with tab3:
         tagged_df = df.dropna(subset=['color_hex']).copy()
         
         if not tagged_df.empty:
+            # Clean up JSON array formatting in brands here too!
+            tagged_df['brand'] = tagged_df['brand'].apply(
+                lambda x: str(x).replace('["', '').replace('"]', '').replace('"', '') if pd.notna(x) else ""
+            )
             tagged_df['display_name'] = tagged_df.apply(
-                lambda x: f"{x['brand']} - {x['name']}" if pd.notna(x['brand']) and x['brand'] else x['name'], axis=1
+                lambda x: f"{x['brand']} - {x['name']}" if x['brand'] else x['name'], axis=1
             )
             
             selected_base = st.selectbox("Select Base Polish", tagged_df['display_name'].tolist(), key="base_polish_select")

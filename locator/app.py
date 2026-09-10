@@ -20,6 +20,10 @@ if "hide_instructions" not in st.session_state:
     st.session_state.hide_instructions = False
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Visual Grid (Images)"
+if "edit_target_box" not in st.session_state:
+    st.session_state.edit_target_box = None
+if "edit_expander_open" not in st.session_state:
+    st.session_state.edit_expander_open = False
 
 # --- FONT DOWNLOADER ---
 @st.cache_resource(show_spinner="📥 Downloading Google Fonts...")
@@ -141,7 +145,6 @@ elif box_config and "hide_instructions_toggled" not in st.session_state:
 
 # --- DATABASE CONNECTION & DATA PROCESSING ---
 def get_db_url():
-    # This dynamically builds the URL using the environment variables from docker-compose!
     user = os.getenv("DB_USER", "koillection_user")
     password = os.getenv("DB_PASSWORD", "local_polish_vault_2026")
     host = os.getenv("DB_HOST", "db")
@@ -176,7 +179,6 @@ for _, row in df.iterrows():
         lbl_str = str(lbl).strip()
         val_str = str(val).strip()
         
-        # Strictly separate Primary Location from Other Locations (Backups)
         if lbl_str.lower() == 'location':
             if items_data[iid]["primary_location"]:
                 items_data[iid]["primary_location"] += f", {val_str}"
@@ -202,7 +204,6 @@ def update_item_field(item_id, label, new_value):
     conn = st.connection("koillection_db", type="sql", url=get_db_url())
     
     with conn.session as s:
-        # GOLDEN RULE: CAST(:id AS text) to prevent Emoji bug!
         check_query = text("""
             SELECT id FROM koi_datum 
             WHERE item_id = CAST(:id AS text) AND label = :label
@@ -218,15 +219,15 @@ def update_item_field(item_id, label, new_value):
             """)
             s.execute(update_query, {"val": new_value, "datum_id": result[0]})
         else:
-            if new_value.strip(): # Only insert if there's actually a value
+            if new_value.strip(): 
                 new_id = str(uuid.uuid4())
-                # FIX: Added 'final_visibility' to the INSERT columns and 'public' to the VALUES!
                 insert_query = text("""
                     INSERT INTO koi_datum (id, item_id, label, value, type, position, created_at, updated_at, visibility, final_visibility)
                     VALUES (CAST(:id AS text), CAST(:item_id AS text), :label, :val, 'text', 0, NOW(), NOW(), 'public', 'public')
                 """)
                 s.execute(insert_query, {"id": new_id, "item_id": item_id, "label": label, "val": new_value})
         s.commit()
+
 # --- POP-UP DIALOGS ---
 @st.dialog("🎯 Assign Polish to Slot")
 def assign_dialog(box_name, col, row):
@@ -413,16 +414,26 @@ with st.sidebar.expander("➕ Add a New Box", expanded=False):
             st.rerun()
 
 if box_config:
-    with st.sidebar.expander("✏️ Edit / Delete a Box", expanded=False):
+    # FIX: The expander now opens automatically if a box was clicked!
+    is_open = st.session_state.get("edit_expander_open", False)
+    with st.sidebar.expander("✏️ Edit / Delete a Box", expanded=is_open):
         st.markdown("<small>Modify or remove an existing box.</small>", unsafe_allow_html=True)
-        selected_box = st.selectbox("Select Box", options=sorted(list(box_config.keys())))
+        box_options = sorted(list(box_config.keys()))
+        
+        # FIX: Automatically select the box that was clicked!
+        default_idx = 0
+        if st.session_state.edit_target_box in box_options:
+            default_idx = box_options.index(st.session_state.edit_target_box)
+            
+        selected_box = st.selectbox("Select Box", options=box_options, index=default_idx)
+        
         if selected_box:
             current_cols = box_config[selected_box]["cols"]
             current_rows = box_config[selected_box]["rows"]
             current_unusable = box_config[selected_box].get("unusable", [])
             
-            edit_cols = st.number_input("Update Columns", min_value=1, max_value=26, value=current_cols, key="edit_cols")
-            edit_rows = st.number_input("Update Rows", min_value=1, max_value=50, value=current_rows, key="edit_rows")
+            edit_cols = st.number_input("Update Columns", min_value=1, max_value=26, value=current_cols, key=f"edit_cols_{selected_box}")
+            edit_rows = st.number_input("Update Rows", min_value=1, max_value=50, value=current_rows, key=f"edit_rows_{selected_box}")
             
             all_possible_cells = [f"{chr(65+c)}{r}" for r in range(1, edit_rows + 1) for c in range(edit_cols)]
             valid_unusable = [cell for cell in current_unusable if cell in all_possible_cells]
@@ -430,7 +441,8 @@ if box_config:
             st.markdown("---")
             st.markdown("**🚫 Blackout Spaces**")
             st.markdown("<small>Select spaces that are physically unusable (e.g., broken slots, dividers). They will appear solid black on the grid.</small>", unsafe_allow_html=True)
-            edit_unusable = st.multiselect("Unusable Spaces", options=all_possible_cells, default=valid_unusable)
+            
+            edit_unusable = st.multiselect("Unusable Spaces", options=all_possible_cells, default=valid_unusable, key=f"edit_unusable_{selected_box}")
             
             st.markdown("<br>", unsafe_allow_html=True)
             col1, col2 = st.columns(2)
@@ -443,6 +455,7 @@ if box_config:
                             "unusable": edit_unusable
                         }
                         save_config(box_config)
+                        st.session_state.edit_expander_open = False # Close the expander after saving
                         time.sleep(0.5)
                     st.toast(f"Updated Box {selected_box}!", icon="✅")
                     time.sleep(1)
@@ -452,15 +465,21 @@ if box_config:
                     with st.spinner("Deleting box..."):
                         del box_config[selected_box]
                         save_config(box_config)
+                        st.session_state.edit_expander_open = False # Close the expander after deleting
                         time.sleep(0.5)
                     st.toast(f"Deleted Box {selected_box}!", icon="🗑️")
                     time.sleep(1)
                     st.rerun()
 
 st.sidebar.markdown("### Current Boxes")
+st.sidebar.markdown("<small>Click a box to edit its dimensions!</small>", unsafe_allow_html=True)
 if box_config:
     for b_name, b_dims in box_config.items():
-        st.sidebar.markdown(f"**Box {b_name}**: {b_dims['cols']} Columns × {b_dims['rows']} Rows")
+        # FIX: Turned the list into clickable buttons!
+        if st.sidebar.button(f"📦 Box {b_name}: {b_dims['cols']} Cols × {b_dims['rows']} Rows", key=f"btn_load_{b_name}", use_container_width=True):
+            st.session_state.edit_target_box = b_name
+            st.session_state.edit_expander_open = True
+            st.rerun()
 else:
     st.sidebar.info("No boxes configured yet.")
 
@@ -468,6 +487,8 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Clear All Box Configurations", use_container_width=True):
     with st.spinner("Clearing all boxes..."):
         save_config({})
+        st.session_state.edit_target_box = None
+        st.session_state.edit_expander_open = False
         time.sleep(0.5)
     st.toast("All boxes cleared!", icon="🧹")
     time.sleep(1)
@@ -500,17 +521,20 @@ if not st.session_state.hide_instructions:
         **Welcome to the Locator Grid!**  
         This tool helps you visualize your physical storage boxes and print sticker labels for them.
         
-        ### 🛠️ Setup Instructions
-        **Step 1: Add Locations in Koillection**
-        When editing an item in Koillection, add a Data field named exactly **`Location`** or **`Other Location(s)`**.
+        ### 📋 Required Koillection Setup
+        For this app to work its magic, make sure you add the following **Data Fields** to your items in Koillection:
+        * **`Location`**: Add this field and type your primary storage slot (e.g., `1-A1`).
+        * **`Other Location(s)`**: Add this field for backup bottles. The app will automatically highlight these in a different color!
+        * *(Optional)* **`Brand`**, **`Colour (Hex)`**, or any other fields you want to display on your printed stickers.
         
-        **Step 2: Format your Locations**
+        ### 🛠️ Setup Instructions
+        **Step 1: Format your Locations**
         Type your locations using the format `Box-ColumnRow`. 
         * Example 1: `1-A1` (Box 1, Column A, Row 1)
         * Example 2: `Main-B4` (Box Main, Column B, Row 4)
         * Example 3: `Display Shelf` (Simple text locations will automatically get their own tab!)
         
-        **Step 3: Configure your Boxes**
+        **Step 2: Configure your Boxes**
         Use the **⚙️ Box Configuration** menu on the left sidebar to tell this app how big your physical boxes are. Once configured, your items will automatically appear in the grid!
         
         ---
@@ -855,32 +879,38 @@ def get_sticker_image_bytes(box_num, box_data):
 
     title_x = (w - tw) / 2
     title_y = (title_area - th) / 2
-    draw.text((title_x, title_y), title_text, font=font_title, fill=h_color)
     
-    if h_underline:
-        underline_thickness = max(4, int(title_font_size / 15))
-        draw.line([(title_x, title_y + th + 10), (title_x + tw, title_y + th + 10)], fill=h_color, width=underline_thickness)
-
+    # FIX: Draw the backgrounds FIRST so they don't paint over the underline!
     draw.rectangle([0, title_area, w, title_area + header_row_h], fill=grid_bg_color)
     draw.rectangle([0, title_area, header_col_w, h], fill=grid_bg_color)
     
+    # FIX: Subtract bbox[1] to perfectly center the text and prevent it from sagging into the grid
+    draw.text((title_x, title_y - bbox[1]), title_text, font=font_title, fill=h_color)
+    
+    if h_underline:
+        underline_thickness = max(4, int(title_font_size / 15))
+        # FIX: Get the true bounding box of the drawn text to find the exact bottom edge
+        drawn_bbox = draw.textbbox((title_x, title_y - bbox[1]), title_text, font=font_title)
+        true_bottom = drawn_bbox[3]
+        draw.line([(title_x, true_bottom + 4), (title_x + tw, true_bottom + 4)], fill=h_color, width=underline_thickness)
+
     for i in range(num_cols + 1):
         x = header_col_w + (i * cell_w)
         draw.line([(x, title_area), (x, h)], fill=grid_color, width=4)
         if i < num_cols:
             txt = cols[i]
-            bbox = draw.textbbox((0, 0), txt, font=font_header)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            draw.text((x + (cell_w - tw)/2, title_area + (header_row_h - th)/2), txt, font=font_header, fill="white")
+            bbox_h = draw.textbbox((0, 0), txt, font=font_header)
+            tw_h, th_h = bbox_h[2] - bbox_h[0], bbox_h[3] - bbox_h[1]
+            draw.text((x + (cell_w - tw_h)/2, title_area + (header_row_h - th_h)/2 - bbox_h[1]), txt, font=font_header, fill="white")
             
     for i in range(rows + 1):
         y = title_area + header_row_h + (i * cell_h)
         draw.line([(0, y), (w, y)], fill=grid_color, width=4)
         if i < rows:
             txt = str(i + 1)
-            bbox = draw.textbbox((0, 0), txt, font=font_header)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            draw.text(((header_col_w - tw)/2, y + (cell_h - th)/2), txt, font=font_header, fill="white")
+            bbox_h = draw.textbbox((0, 0), txt, font=font_header)
+            tw_h, th_h = bbox_h[2] - bbox_h[0], bbox_h[3] - bbox_h[1]
+            draw.text(((header_col_w - tw_h)/2, y + (cell_h - th_h)/2 - bbox_h[1]), txt, font=font_header, fill="white")
 
     for r in range(1, rows + 1):
         for c_idx, c in enumerate(cols):
@@ -960,10 +990,13 @@ def get_sticker_image_bytes(box_num, box_data):
                         else: 
                             x_draw = x0 + (cell_w - tw) / 2
                             
-                        draw.text((x_draw, y_text), line, font=font_text, fill=current_text_color)
+                        draw.text((x_draw, y_text - bbox[1]), line, font=font_text, fill=current_text_color)
                         
                         if is_underline:
-                            draw.line([(x_draw, y_text + th + 2), (x_draw + tw, y_text + th + 2)], fill=current_text_color, width=2)
+                            # FIX: Get the true bounding box of the drawn text
+                            drawn_bbox = draw.textbbox((x_draw, y_text - bbox[1]), line, font=font_text)
+                            true_bottom = drawn_bbox[3]
+                            draw.line([(x_draw, true_bottom + 2), (x_draw + tw, true_bottom + 2)], fill=current_text_color, width=2)
                         
                         y_text += th + 4
                     y_text += 4

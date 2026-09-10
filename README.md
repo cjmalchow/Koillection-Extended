@@ -34,8 +34,17 @@
 * **Point-and-Click Extraction:** Go to the **🏷️ Tag Existing Polish** tab, click directly on a polish's uploaded photo, and instantly extract the exact Primary (and Secondary) color hex codes.
 * **Direct Database Integration:** Saves the extracted hex codes directly to your PostgreSQL database, ensuring your data is always in sync with the core app.
 * **Dupe Finder:** Go to the **🔍 Search Collection** tab, pick a target color from a color wheel, and adjust the **Tolerance Radius** slider. The app will instantly search your entire vault to find exact matches or similar shades!
+* **Nail Art Pairings:** Select a base polish, and the app uses mathematical color theory (HSV conversion) to suggest the perfect Complementary, Analogous, and Triadic matches from your actual collection.
 
-### ⚡ 3. Bulk Actions (List View)
+### 🏆 3. Elo-Based Polish Ranker
+*Definitively rank your nail polishes using a competitive 1-on-1 Elo rating system to discover your true favorites.*
+* **Wishlist Integration:** Pulls directly from your Koillection Wishlists (e.g., "Summer Favorites" or "Untrieds") to create a focused ranking session.
+* **1-on-1 Matchups:** Pits polishes against each other in head-to-head visual battles. Just click the picture of the one you prefer, and the algorithm handles the rest!
+* **Smart Math (Elo System):** Uses a K-Factor of 32 to calculate expected outcomes. Upsets (underdogs beating heavyweights) result in massive point swings, while expected wins yield minor adjustments.
+* **Session Merging:** Save your ranking sessions and merge them later to see how your preferences change over time, complete with up/down movement indicators.
+* **Portable HTML Exports:** Download your final leaderboard as a standalone HTML file with Base64 images embedded directly inside, perfect for sharing or archiving!
+
+### ⚡ 4. Bulk Actions (List View)
 *Manage massive hauls with ease using the custom action bar integrated directly into the PHP/Twig core.*
 * **Multi-Select:** Convenient checkboxes added to the main list view.
 * **Bulk Duplicate:** Instantly clone multiple items at once. This is a lifesaver when adding an entire 10-piece collection from the same brand where only the name and color change!
