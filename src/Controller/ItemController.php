@@ -309,4 +309,9 @@ class ItemController extends AbstractController
     {
         return $this->render('App/Ranker/index.html.twig');
     }
-} // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE
+#[Route('/mani-logger', name: 'app_mani_logger', methods: ['GET'])]
+    public function maniLogger(): Response
+    {
+        return $this->render('App/Item/mani_logger.html.twig');
+    }
+    } // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE

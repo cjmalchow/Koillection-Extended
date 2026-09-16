@@ -1,0 +1,18 @@
+{% extends 'layout.html.twig' %}
+
+{% block title %}Mani Logger{% endblock %}
+
+{% block content %}
+    <div style="width: 100%; height: calc(100vh - 60px); overflow: hidden;">
+        <iframe id="custom-app-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            var currentPort = window.location.port;
+            var targetPort = (currentPort === '8144') ? '8508' : '8507';
+            var iframeUrl = window.location.protocol + "//" + window.location.hostname + ":" + targetPort;
+            document.getElementById('custom-app-frame').src = iframeUrl;
+        });
+    </script>
+{% endblock %}
