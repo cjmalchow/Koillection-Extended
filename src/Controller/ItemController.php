@@ -304,14 +304,22 @@ class ItemController extends AbstractController
     {
         return $this->render('App/color_tracker.html.twig');
     }
-#[Route('/ranker', name: 'app_ranker', methods: ['GET'])]
+
+    #[Route('/ranker', name: 'app_ranker', methods: ['GET'])]
     public function ranker(): Response
     {
         return $this->render('App/Ranker/index.html.twig');
     }
-#[Route('/mani-logger', name: 'app_mani_logger', methods: ['GET'])]
+
+    #[Route('/mani-logger', name: 'app_mani_logger', methods: ['GET'])]
     public function maniLogger(): Response
     {
         return $this->render('App/Item/mani_logger.html.twig');
     }
-    } // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE
+
+    #[Route('/swatch-creator', name: 'app_swatch_creator', methods: ['GET'])]
+    public function swatchCreator(): Response
+    {
+        return $this->render('App/swatch_creator.html.twig');
+    }
+} // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE
