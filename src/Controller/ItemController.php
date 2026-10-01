@@ -322,4 +322,15 @@ class ItemController extends AbstractController
     {
         return $this->render('App/swatch_creator.html.twig');
     }
-} // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE
+    
+    #[Route('/polish-directory', name: 'app_polish_directory', methods: ['GET'])]
+    public function polishDirectory(): Response
+    {
+        return $this->render('App/polish_directory.html.twig');
+    }
+    #[Route('/bottle-label-maker', name: 'app_bottle_label_maker', methods: ['GET'])]
+    public function bottleLabelMaker(): Response
+    {
+        return $this->render('App/bottle_label_maker.html.twig');
+    }
+    } // <--- THIS MUST BE THE FINAL BRACKET OF THE FILE

@@ -179,9 +179,13 @@ class Item implements BreadcrumbableInterface, LoggableInterface, CacheableInter
         return $this->getName() ?? '';
     }
 
-    public function getDatumByLabel(string $label): ?Datum
+    public function getDatumByLabel(?string $label): ?Datum
     {
-        foreach ($this->getData() as $datum) {
+        if ($label === null || $label === '') {
+            return null;
+        }
+
+        foreach ($this->data as $datum) {
             if ($datum->getLabel() === $label) {
                 return $datum;
             }
@@ -418,7 +422,6 @@ class Item implements BreadcrumbableInterface, LoggableInterface, CacheableInter
     public function setFile(?File $file): Item
     {
         $this->file = $file;
-        // Force Doctrine to trigger an update
         if ($file instanceof UploadedFile) {
             $this->setUpdatedAt(new \DateTimeImmutable());
         }

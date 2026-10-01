@@ -53,13 +53,15 @@
             {% endif %}
 
             {% for column in displayConfiguration.columns %}
-                <th class="center hide-on-small-and-down">
-                    {{ column }}
-                    <span>
-                        <i class="fa fa-long-arrow-up {{ sortingProperty == column and sortingDirection == 'ASC' ? 'active' }}" data-column="{{ column }}" data-direction="asc" data-action="click->table#sort" data-table-target="sorter"></i>
-                        <i class="fa fa-long-arrow-down {{ sortingProperty == column and sortingDirection == 'DESC' ? 'active' }}" data-column="{{ column }}" data-direction="desc" data-action="click->table#sort" data-table-target="sorter"></i>
-                    </span>
-                </th>
+                {% if column is not empty %}
+                    <th class="center hide-on-small-and-down">
+                        {{ column }}
+                        <span>
+                            <i class="fa fa-long-arrow-up {{ sortingProperty == column and sortingDirection == 'ASC' ? 'active' }}" data-column="{{ column }}" data-direction="asc" data-action="click->table#sort" data-table-target="sorter"></i>
+                            <i class="fa fa-long-arrow-down {{ sortingProperty == column and sortingDirection == 'DESC' ? 'active' }}" data-column="{{ column }}" data-direction="desc" data-action="click->table#sort" data-table-target="sorter"></i>
+                        </span>
+                    </th>
+                {% endif %}
             {% endfor %}
             {% if context == 'default' %}
                 {% if displayConfiguration.showVisibility %}
@@ -89,35 +91,37 @@
                     {% endif %}
                 </td>
                 <td data-column="name">
-                    <span data-value="{{ item.name }}" data-type="string">
+                    <span data-value="{{ item.name }}" data-type="string"></span>
                     <a class="table-link" href="{{ link }}"></a>
                     {{ item.name|u.truncate(50, '...') }}
                 </td>
 
                 {% if displayConfiguration.showItemQuantities %}
                     <td data-column="koi-quantity">
-                    <span data-value="{{ item.quantity }}" data-type="number">
-                    <a class="table-link" href="{{ link }}"></a>
-                    {{ item.quantity }}
+                        <span data-value="{{ item.quantity }}" data-type="number"></span>
+                        <a class="table-link" href="{{ link }}"></a>
+                        {{ item.quantity }}
                     </td>
                 {% endif %}
 
                 {% for column in displayConfiguration.columns %}
-                    {% set datum = item.getDatumByLabel(column) %}
+                    {% if column is not empty %}
+                        {% set datum = item.getDatumByLabel(column) %}
 
-                    <td class="center hide-on-small-and-down" data-column="{{ column }}">
-                        {% if datum is not null %}
-                            {% if datum.type != 'link' %}
+                        <td class="center hide-on-small-and-down" data-column="{{ column }}">
+                            {% if datum is not null %}
+                                {% if datum.type != 'link' %}
+                                    <a class="table-link" href="{{ link }}"></a>
+                                {% endif %}
+
+                                {% include 'App/Datum/_display_value/_' ~ datum.type ~ '.html.twig' with {'datum': datum} only %}
+                            {% else %}
+                                <span data-value=""></span>
                                 <a class="table-link" href="{{ link }}"></a>
+                                -
                             {% endif %}
-
-                            {% include 'App/Datum/_display_value/_' ~ datum.type ~ '.html.twig' with {'datum': datum} only %}
-                        {% else %}
-                            <span data-value="">
-                            <a class="table-link" href="{{ link }}"></a>
-                            -
-                        {% endif %}
-                    </td>
+                        </td>
+                    {% endif %}
                 {% endfor %}
                 {% if context == 'default' %}
                     {% if displayConfiguration.showVisibility %}

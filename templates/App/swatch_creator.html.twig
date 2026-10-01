@@ -1,13 +1,48 @@
-{% extends 'App/layout.html.twig' %}
+{% extends 'layout.html.twig' %}
 
 {% block title %}{{ 'Color Swatch Creator' }}{% endblock %}
 
-{% block content %}
-    <div style="width: 100%; height: calc(100vh - 70px); padding: 0; margin: 0; overflow: hidden;">
-        <iframe 
-            src="http://localhost:8509" 
-            style="width: 100%; height: 100%; border: none;"
-            title="Color Swatch Creator">
-        </iframe>
+{% block breadcrumb %}
+    <div class="breadcrumb">
+        <a href="{{ path('app_collection_index') }}">{{ 'menu.collections'|trans }}</a>
+        <i class="fa fa-angle-right separator"></i>
+        <span>Swatch Creator</span>
     </div>
+{% endblock %}
+
+{% block content %}
+    <div class="collection-header">
+        <div class="title-block">
+            <h1>
+                <i class="fa fa-fw" style="display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;">
+                    <svg viewBox="0 0 24 24" style="height: 1em; fill: currentColor;" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10c1.38 0 2.5-1.12 2.5-2.5 0-.61-.23-1.21-.64-1.67-.08-.1-.13-.21-.13-.33 0-.28.22-.5.5-.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 8 6.5 8 8 8.67 8 9.5 7.33 11 6.5 11zm3-4C8.67 7 8 6.33 8 5.5S8.67 4 9.5 4s1.5.67 1.5 1.5S10.33 7 9.5 7zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 4 14.5 4s1.5.67 1.5 1.5S15.33 7 14.5 7zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 8 17.5 8s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                    </svg>
+                </i> Color Swatch Creator
+            </h1>
+        </div>
+    </div>
+
+    <div class="content-block" style="padding: 0; overflow: hidden; height: calc(100vh - 120px); border-radius: 4px; box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14);">
+        <iframe id="swatch-creator-iframe" width="100%" height="100%" style="border: none;"></iframe>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const currentHost = window.location.hostname;
+            const currentPort = window.location.port;
+            
+            // Default to Sandbox Swatch Creator port
+            let swatchPort = '8509'; 
+            
+            // If the browser sees we are on Production Koillection (8144),
+            // switch to the Production Swatch Creator port (8510)!
+            if (currentPort === '8144') {
+                swatchPort = '8510';
+            }
+            
+            // Build the final URL and inject it into the iframe
+            document.getElementById('swatch-creator-iframe').src = "http://" + currentHost + ":" + swatchPort;
+        });
+    </script>
 {% endblock %}

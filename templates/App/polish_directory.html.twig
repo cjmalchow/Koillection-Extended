@@ -1,0 +1,33 @@
+{% extends 'layout.html.twig' %}
+
+{% block title %}{{ 'Polish & Storage Directory'|trans }}{% endblock %}
+
+{% block content %}
+    <div style="width: 100%; height: calc(100vh - 65px); margin: 0; padding: 0; overflow: hidden; background: #ffffff;">
+        <iframe 
+            id="polish-directory-iframe" 
+            width="100%" 
+            height="100%" 
+            style="border: none; display: block;" 
+            allow="clipboard-read; clipboard-write">
+        </iframe>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const currentHost = window.location.hostname;
+            const currentPort = window.location.port;
+            
+            // Port 8513 for Sandbox, 8514 for Production
+            let targetPort = '8513';
+            if (currentPort === '8144') {
+                targetPort = '8514';
+            }
+            
+            const iframe = document.getElementById('polish-directory-iframe');
+            if (iframe) {
+                iframe.src = window.location.protocol + "//" + currentHost + ":" + targetPort;
+            }
+        });
+    </script>
+{% endblock %}
