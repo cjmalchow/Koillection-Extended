@@ -5,126 +5,137 @@
 <p align="center">
     <img src="https://img.shields.io/github/v/release/koillection/koillection" />
     <img src="https://img.shields.io/github/license/koillection/koillection" />    
-    <img src="https://img.shields.io/github/actions/workflow/status/koillection/koillection/ci.yml" />
-    <img src="https://img.shields.io/scrutinizer/g/koillection/koillection/1.4" />    
+    <img src="https://img.shields.io/badge/PHP-8.3-blue" />
+    <img src="https://img.shields.io/badge/Symfony-8.0-black" />
+    <img src="https://img.shields.io/badge/Server-FrankenPHP-00ADD8" />
+    <img src="https://img.shields.io/badge/Python-3.11-yellow" />
+    <img src="https://img.shields.io/badge/Database-PostgreSQL%2016-336791" />
 </p>
-<p align="center">
-    <img src="https://img.shields.io/packagist/php-v/koillection/koillection" />
-    <img src="https://img.shields.io/badge/postgresql->=10.0-blue" />            
-    <img src="https://img.shields.io/badge/mariadb->=10.0-blue" />
-    <img src="https://img.shields.io/badge/mysql->=8.0-blue" />
-<p>
 
 # 💅 Koillection: The Ultimate Nail Polish Vault
 
-*This is a highly customized, full-stack fork of the original [Koillection](https://github.com/benjaminjonard/koillection) app. It has been specifically engineered for nail polish collectors, integrating custom Python-powered tools to track physical storage, extract exact color hex codes from photos, and find color dupes.*
-
-## ✨ Exclusive Nail Polish Features
-
-### 🗺️ 1. Storage Grid Visualizer & Sticker Generator
-*Never lose a bottle again. This custom Python/Streamlit app maps your physical storage boxes into a digital grid and generates highly customizable, printable labels.*
-* **Dynamic Digital Grid:** Automatically places your polishes into a visual grid based on their `Location` data field (e.g., `1-A1`). Simple text locations (like `Display Shelf`) automatically get their own lists!
-* **Printable Box Stickers:** Generates high-resolution, ink-friendly PNG labels designed to be printed and taped to the inside or outside of your physical boxes.
-* **Ultimate Customization:** Choose from dozens of decorative Google Fonts (like Lobster, Caveat, and Great Vibes), adjust text alignment, and customize all colors (background, grid lines, and text) via a dedicated pop-up UI.
-* **Smart Auto-Fitting:** The sticker heading automatically calculates and scales its font size to perfectly fill the available banner space.
-* **Blackout Spaces:** Have a physically broken slot or a structural divider in your drawer? Mark specific coordinates as "Unusable" to black them out on the digital grid and sticker.
-
-### 🎨 2. Smart Color Matcher & Tagger
-*Turn your collection into a searchable color palette. This embedded Streamlit app extracts exact hex codes from your photos and searches for dupes.*
-* **Point-and-Click Extraction:** Go to the **🏷️ Tag Existing Polish** tab, click directly on a polish's uploaded photo, and instantly extract the exact Primary (and Secondary) color hex codes.
-* **Direct Database Integration:** Saves the extracted hex codes directly to your PostgreSQL database, ensuring your data is always in sync with the core app.
-* **Dupe Finder:** Go to the **🔍 Search Collection** tab, pick a target color from a color wheel, and adjust the **Tolerance Radius** slider. The app will instantly search your entire vault to find exact matches or similar shades!
-* **Nail Art Pairings:** Select a base polish, and the app uses mathematical color theory (HSV conversion) to suggest the perfect Complementary, Analogous, and Triadic matches from your actual collection.
-
-### 🏆 3. Elo-Based Polish Ranker
-*Definitively rank your nail polishes using a competitive 1-on-1 Elo rating system to discover your true favorites.*
-* **Wishlist Integration:** Pulls directly from your Koillection Wishlists (e.g., "Summer Favorites" or "Untrieds") to create a focused ranking session.
-* **1-on-1 Matchups:** Pits polishes against each other in head-to-head visual battles. Just click the picture of the one you prefer, and the algorithm handles the rest!
-* **Smart Math (Elo System):** Uses a K-Factor of 32 to calculate expected outcomes. Upsets (underdogs beating heavyweights) result in massive point swings, while expected wins yield minor adjustments.
-* **Session Merging:** Save your ranking sessions and merge them later to see how your preferences change over time, complete with up/down movement indicators.
-* **Portable HTML Exports:** Download your final leaderboard as a standalone HTML file with Base64 images embedded directly inside, perfect for sharing or archiving!
-
-### ⚡ 4. Bulk Actions (List View)
-*Manage massive hauls with ease using the custom action bar integrated directly into the PHP/Twig core.*
-* **Multi-Select:** Convenient checkboxes added to the main list view.
-* **Bulk Duplicate:** Instantly clone multiple items at once. This is a lifesaver when adding an entire 10-piece collection from the same brand where only the name and color change!
-* **Bulk Move & Delete:** Quickly reorganize your vault or clean up your database with a single click.
+*A highly customized, full-stack fork of [Koillection](https://github.com/benjaminjonard/koillection) running on Symfony 8, Twig, and FrankenPHP. It has been engineered specifically for extensive nail polish vaults, integrating an ecosystem of independent Python 3.11/Streamlit micro-apps embedded seamlessly into the core UI via dynamic iframes.*
 
 ---
 
-Koillection is a self-hosted collection manager created to keep track of physical (mostly) collections of any kind like books, DVDs, stamps, games... 
-Koillection is meant to be used for any kind of collections and doesn't come with pre-built metadata download. But you can tailor your own HTML scraper, or you can add your own metadata freely.
-    
-You can find detailed information in the <a href="https://github.com/koillection/koillection/wiki">wiki</a> (under construction)
+## ✨ The Custom Nail Polish Application Suite
 
-## Installation
-See the <a href="https://github.com/koillection/koillection/wiki/Installation">Installation page</a> in the wiki
+```
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                 KOILLECTION CORE (PHP 8+ / FrankenPHP)                 │
+  └───────┬────────────────────────────────────────────────────────┬───────┘
+          │ (Port 8081 / 8144)                                     │
+          ▼                                                        ▼
+  ┌───────────────────────────────┐        ┌───────────────────────────────┐
+  │   1. Storage Grid Visualizer  │ (8501) │   5. Color Swatch Creator     │ (8509)
+  │   2. Smart Color Matcher      │ (8503) │   6. Bottle Label Maker (24mm)│ (8511)
+  │   3. Elo-Based Polish Ranker  │ (8505) │   7. Polish & Storage Dir     │ (8513)
+  │   4. Mani Logger & Timers     │ (8507) └───────────────────────────────┘
+  └───────────────────────────────┘
+```
 
-## Updating
-See the <a href="https://github.com/koillection/koillection/wiki/Updating">Updating page</a> in the wiki
+### 🗺️ 1. Storage Grid Visualizer & Sticker Generator (Port 8501 / 8502)
+*Never lose a bottle again. Maps physical storage boxes into an interactive digital grid and generates customizable printable labels.*
+* **Dynamic Grid Mapping:** Automatically arranges polishes by their `Location` coordinate (e.g. `1-A1` through `1-H8`). Unslotted storage locations (like `Display Shelf`) dynamically receive dedicated lists.
+* **High-Res Printable Stickers:** Generates crisp, ink-friendly PNG labels designed to be affixed to the inside lids or exterior faces of physical drawers and acrylic boxes.
+* **Deep Typography Customization:** Dozens of Google Fonts (Lobster, Caveat, Great Vibes), text alignment controls, custom background/border palettes, and auto-scaling font sizing.
+* **Blackout Coordinates:** Allows structural dividers or broken physical slots to be flagged as "Unusable", blacking them out on both the on-screen grid and printed stickers.
 
-## Scraping
-See the <a href="https://github.com/koillection/koillection/wiki/Scraping">Scraping page</a> in the wiki
+### 🎯 2. Smart Color Matcher & Tagger (Port 8503 / 8504)
+*Transform your physical vault into a searchable color studio. Extracts precise hex codes from swatch photos and finds color duplicates.*
+* **Point-and-Click Hex Eyedropper:** Click directly on an uploaded swatch photo to sample and save Primary and Secondary hex colors directly to PostgreSQL.
+* **Tolerance-Radius Dupe Search:** Pick a target color on an HSV color wheel and adjust tolerance distance to find exact twins or close substitutes in your existing collection.
+* **Harmonic Color Theory Pairings:** Automatically calculates Complementary, Analogous, Triadic, and Tetradic pairings pulled strictly from polishes you already own.
 
-## Demo
+### 🏆 3. Elo-Based Polish Ranker (Port 8505 / 8506)
+*Definitively rank your collection using a competitive 1-on-1 Elo chess rating algorithm to discover your true holy grails.*
+* **Wishlist & Filter Scoping:** Target specific subsets (e.g. "Summer Neons" or "Untried Creams") for focused voting gauntlets.
+* **Smart Math (K-Factor 32):** Major rating swings occur during upsets, while expected favorites earn incremental gains.
+* **Session Persistence & Merging:** Merge separate voting sessions to track taste evolution over time with delta movement indicators.
+* **Portable HTML Archive:** Export standalone HTML leaderboards with Base64 images embedded directly inside for offline archival.
 
-Gitpod will run a new and temporary instance for you.
+### 💅 4. Mani Logger & Digital Canvas (Port 8507 / 8508)
+*An interactive digital manicure logbook with real-time timers and finger-by-finger formula mapping.*
+* **10-Finger Digital Canvas:** Visually assign different polishes, toppers, and nail art designs to individual fingers on both hands.
+* **Live Application Timers:** JavaScript coat timers tracking dry-times between base, color, and top coat layers.
+* **Wear-Time Tracker:** Log longevity, chipping timelines, and upload high-resolution final manicure swatch photos.
 
-When Gitpod has finished loading, select :
+### 🎨 5. Color Swatch Creator (Port 8509 / 8510)
+*Design and compile physical swatch binder albums with vector PDF generation.*
+* **200 DPI Vector PDF Engine:** Formatted for high-quality cardstock printing and direct swatch stick placement.
+* **Multi-Book Management:** Organize swatches across multiple physical binders (e.g. "Indie Vault" vs "Main Creams").
+* **Rainbow Chromatic Sorting:** Arranges swatches using perceptual HSV spectrum mathematics.
 
-    More actions -> Open in browser
+### 🏷️ 6. Precision Bottle Label Maker (Port 8511 / 8512)
+*Industrial-grade label generation optimized for Brother P-Touch Cube Plus (PT-P710BT) 24mm continuous laminated tape.*
+* **1-Bit Vector Graphics Engine (180 DPI):** Custom geometric polygon renderers for 22 nail finishes and half-star ratings to eliminate missing glyph boxes (`□`) on thermal print drivers.
+* **Smart Dynamic Content Budgeting:** Automatically switches typography layouts from standard 55mm down to 34mm mini-labels based on bottle cap sizes.
+* **Hybrid QR System:** Generates compact QR codes that bridge offline human-readable specs with instant online links to Koillection item profiles.
+* **Archival 300 DPI Legend Sheets:** Compiles full 8.5" × 11" US Letter reference legends explaining all 22 finish symbols.
 
+### 📖 7. Polish & Storage Directory Studio (Port 8513 / 8514)
+*Publication-quality US Letter catalog generator designed for physical 3-ring desk binders and drawer index inserts.*
+* **Multi-Dimensional Grouping:** Group and generate distinct section headers by **Color Spectrum** (natural rainbow ordering), **Brand**, **Storage Location**, **Finish Effect**, **Star Rating**, or **Acquisition Year**.
+* **Smart Swatch Book Memory:** Decoupled JSON binder state tracking physical album pages. When new polishes arrive, it calculates and outputs **only the replacement last page** (filling its empty slots) plus any overflow sheets, saving paper and ink.
+* **Crash-Proof HTML5 Base64 Pipeline:** Pure client-side data URI download buttons that bypass iframe WebSocket drops.
+* **Dynamic Table Geometry:** Automatically recalculates column widths to fit 540 pt usable printable space regardless of which columns are toggled on/off.
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/koillection/koillection-gitpod)
+---
 
-## Screenshots
+## ⚡ Core Koillection Enhancements
 
-<p align="center">
-    <img width="400px" src="https://user-images.githubusercontent.com/20560781/168048241-cfcb71ce-c296-4f1b-bbb8-ecfea1e31048.png">
-    <img width="400px" src="https://user-images.githubusercontent.com/20560781/168048246-53e991d1-77e9-4397-80c4-f1aa82504068.png">
-</p>
+### 📋 Bulk Actions (List View)
+* Integrated directly into the core Symfony/Twig templates (`_items_list.html.twig`).
+* Multi-select checkboxes for batch operations.
+* **Bulk Duplicate:** Clone multiple polishes with identical brand/finish metadata in one click.
+* **Bulk Move & Delete:** Rapidly migrate entire collections between physical storage boxes.
 
-<p align="center">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/168049067-dbac37b1-1150-4be5-ab95-f784d606f300.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/168049077-efac8291-4f5c-48d9-b2fa-d65a51842d25.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/177819056-8f110583-08ae-42b6-9e32-3e3db4a3923a.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/177818960-6e988a73-67e0-47bc-a377-0c92c530d423.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/168049088-2cda1da5-6e55-4800-918f-001fad6559a6.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/168049095-5f26e2c6-7218-42ae-bde1-4b32abae7e35.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/177819233-f3aa62c4-ce48-4184-9864-d40708367dbf.png">
-    <img height="215px" src="https://user-images.githubusercontent.com/20560781/177819299-048ea3ad-fa0a-463d-b5b7-1607773553e4.png">
-</p>
+### 🛡️ Null-Safe Table View Engine
+* Patched strict PHP 8 typing in `src/Entity/Item.php` (`getDatumByLabel(?string $label)`) to gracefully handle unassigned, custom, or empty datum fields.
+* Guarded Twig column rendering in both table headers and rows, permanently preventing 500 crashes on fields containing special characters or parentheses (e.g. `Size (oz)` and `Colour (Hex)`).
 
-## Warning
+### 🚀 Live FrankenPHP Development Mounts
+* Solved the in-memory FrankenPHP worker disconnect by mounting Windows development directories directly to the active runtime path (`./src:/app/public/src` and `./templates:/app/public/templates`).
+* Twig template and controller updates reflect immediately upon clearing the Symfony cache (`php bin/console cache:clear`) without requiring slow image rebuilds.
 
-Please back up your database, especially when updating to a new version. I do my best to test new versions, especially when they contains data migrations but some edge cases may escape my vigilance.
+---
 
-Please do back up your database.
+## 🌐 Port Allocation & Architecture
 
-## Support Koillection
+Both environments run concurrently on the same Docker host with strict network and port isolation:
 
-There are a few things you can do to support Koillection :
-    
-* If you like Koillection please consider leaving a ⭐, it gives additional motivation to continue working on the project
-* Report any bug or error you see
-* English is not my first language, it would be a huge help if you could report any mistakes in both Koillection or the wiki.
+| Service | Sandbox Port | Production Port | Internal Container Port |
+| :--- | :--- | :--- | :--- |
+| **Koillection Core (FrankenPHP)** | `8081` | `8144` | `80` |
+| **App #1: Storage Grid (Locator)** | `8501` | `8502` | `8501` |
+| **App #2: Color Matcher** | `8503` | `8504` | `8501` |
+| **App #3: Elo Ranker** | `8505` | `8506` | `8501` |
+| **App #4: Mani Logger** | `8507` | `8508` | `8501` |
+| **App #5: Swatch Creator** | `8509` | `8510` | `8501` |
+| **App #6: Bottle Label Maker** | `8511` | `8512` | `8501` |
+| **App #7: Polish Directory** | `8513` | `8514` | `8501` |
+| **PostgreSQL Database** | `5433` | `5432` | `5432` |
+| **n8n Automation Engine** | `5679` | `5678` | `5678` |
 
-You can contribute and edit translations here: https://crowdin.com/project/koillection. 
-If you wish to contribute to a new language, please open a discussion on GitHub or Crowdin and I'll gladly add it. 
-You are also welcome if you want to proofread existing translations.
+---
 
-### Translations status
-<!-- CROWDIN-TRANSLATIONS-PROGRESS-ACTION-START -->
+## 🛠️ Sandbox Development Commands
 
+```powershell
+# Recreate modified micro-services
+docker compose up -d --force-recreate koillection polish-directory
 
-#### Available
+# Fast Symfony cache clear (2 seconds - live mounts active)
+docker exec koillection-sandbox php bin/console cache:clear
 
-<table><tr><td align="center" valign="top"><img width="30px" height="30px" title="Dutch" alt="Dutch" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/nl.png"></div><div align="center" valign="top">100%</td><td align="center" valign="top"><img width="30px" height="30px" title="English" alt="English" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/en.png"></div><div align="center" valign="top">100%</td><td align="center" valign="top"><img width="30px" height="30px" title="French" alt="French" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/fr.png"></div><div align="center" valign="top">100%</td><td align="center" valign="top"><img width="30px" height="30px" title="German" alt="German" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/de.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Italian" alt="Italian" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/it.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Polish" alt="Polish" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/pl.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Portuguese" alt="Portuguese" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/pt-PT.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Portuguese, Brazilian" alt="Portuguese, Brazilian" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/pt-BR.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Spanish" alt="Spanish" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/es-ES.png"></div><div align="center" valign="top">99%</td><td align="center" valign="top"><img width="30px" height="30px" title="Russian" alt="Russian" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/ru.png"></div><div align="center" valign="top">97%</td></tr><tr><td align="center" valign="top"><img width="30px" height="30px" title="Chinese Simplified" alt="Chinese Simplified" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/zh-CN.png"></div><div align="center" valign="top">95%</td></table>
+# Full image baking (when adding new packages or assets)
+docker buildx build -t my-custom-koillection .
+```
 
-#### In progress
+---
 
-<table><tr><td align="center" valign="top"><img width="30px" height="30px" title="Danish" alt="Danish" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/da.png"></div><div align="center" valign="top">75%</td><td align="center" valign="top"><img width="30px" height="30px" title="Turkish" alt="Turkish" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/tr.png"></div><div align="center" valign="top">30%</td><td align="center" valign="top"><img width="30px" height="30px" title="Ukrainian" alt="Ukrainian" src="https://raw.githubusercontent.com/benjaminjonard/crowdin-translations-progress-action/1.0/flags/uk.png"></div><div align="center" valign="top">2%</td></tr></table>
-<!-- CROWDIN-TRANSLATIONS-PROGRESS-ACTION-END -->
+## Upstream Documentation & License
 
-## Licensing
-Koillection is an Open Source software, released under the MIT License.
+Koillection is open-source software created by Benjamin Jonard, released under the [MIT License](LICENSE).
+* Upstream Project: [https://github.com/koillection/koillection](https://github.com/koillection/koillection)
+* Documentation & Wiki: [https://github.com/koillection/koillection/wiki](https://github.com/koillection/koillection/wiki)
