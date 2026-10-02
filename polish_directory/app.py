@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 
 from db import fetch_polish_inventory, get_unique_filter_values
-from pdf_generator import build_tabular_directory_pdf
+from pdf_generator import build_tabular_directory_pdf, build_legend_pdf
 import book_manager as bm
 
 if "vault" not in st.session_state:
@@ -12,6 +12,9 @@ if "vault" not in st.session_state:
 
 if "pdf_bytes" not in st.session_state.vault:
     st.session_state.vault["pdf_bytes"] = None
+
+if "legend_bytes" not in st.session_state.vault:
+    st.session_state.vault["legend_bytes"] = None
 
 if "pending_commit_ids" not in st.session_state.vault:
     st.session_state.vault["pending_commit_ids"] = []
@@ -25,10 +28,6 @@ st.set_page_config(
 
 
 def render_html5_download_button(pdf_bytes: bytes, filename: str, label: str = "⬇️ Download PDF"):
-    """
-    Renders an archival, crash-proof HTML5 download button using a Base64 data URI.
-    Bypasses Streamlit's internal WebSocket requireServerUri crash in iframe environments.
-    """
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     button_html = f"""
     <div style="margin: 12px 0;">
@@ -95,6 +94,14 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+    st.subheader("📑 Quick Tools")
+    if st.button("🖨️ Compile 1-Page Icon Legend", type="secondary", use_container_width=True):
+        with st.spinner("Rendering icon key on single 8.5x11 sheet..."):
+            legend_pdf = build_legend_pdf(font_family="Helvetica", banner_bg="#2C3E50", banner_text="#FFFFFF")
+            st.session_state.vault["legend_bytes"] = legend_pdf
+            st.success("Legend sheet compiled!")
+
+    st.markdown("---")
     
     with st.expander("🎨 Document Styling & Columns", expanded=False):
         font_choice = st.selectbox("Typography Font", ["Helvetica", "Times-Roman", "Courier"], index=0)
@@ -115,14 +122,30 @@ with st.sidebar:
             c_zebra_bg = preset["zebra_bg"]
 
         compact_density = st.checkbox("Compact Row Density", value=True)
+        
+        finish_icon_only = st.checkbox(
+            "Multi-Icon Finish Mode (Shows multiple finish icons side-by-side, no text)",
+            value=True
+        )
+
+        # CONFIGURABLE DEFAULT COAT COUNT (Defaults to 3)
+        default_coats = st.number_input(
+            "Default # of Coats (when unlisted)",
+            min_value=1,
+            max_value=3,
+            value=3,
+            step=1,
+            help="Fallback coat count for polishes that don't have a coat count specified in Koillection."
+        )
 
         st.markdown("**Columns to Print:**")
         all_col_options = {
             "location": "Location ID",
             "color_swatch": "Color Swatch Pip",
+            "nail_type": "Formulation Type (Icon)",
             "brand": "Brand",
             "shade_name": "Shade Name",
-            "finish": "Finish & Icon",
+            "finish": "Finish (Icons)",
             "coats": "Coats (Opacity Pips)",
             "rating": "Star Rating",
             "size_acq": "Size & Acquisition Date",
@@ -131,7 +154,7 @@ with st.sidebar:
         selected_columns = st.multiselect(
             "Select Columns",
             options=list(all_col_options.keys()),
-            default=["location", "color_swatch", "brand", "shade_name", "finish", "coats", "rating", "size_acq"],
+            default=["location", "color_swatch", "nail_type", "brand", "shade_name", "finish", "coats", "rating", "size_acq"],
             format_func=lambda x: all_col_options[x]
         )
 
@@ -140,11 +163,12 @@ with st.sidebar:
 
     grouping_choice = st.selectbox(
         "Primary Grouping (PDF Banners)",
-        options=["color_family", "brand", "location", "finish", "rating_group", "acquisition_year", "none"],
+        options=["color_family", "brand", "nail_type", "location", "finish", "rating_group", "acquisition_year", "none"],
         index=0,
         format_func=lambda x: {
             "color_family": "🌈 Color Spectrum (Reds, Blues, Purples)",
             "brand": "🏷️ Brand (OPI, Mooncat, ILNP)",
+            "nail_type": "🧪 Formulation Type (Regular, Gel, Top Coat)",
             "location": "📦 Storage Location (Drawer / Box)",
             "finish": "✨ Finish / Effect (Holo, Creme, Flake)",
             "rating_group": "⭐ Star Rating Tiers",
@@ -168,37 +192,61 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.subheader("🔍 Filters")
+    st.subheader("🔍 Filters (Inclusion)")
 
     search_query = st.text_input("Search Shade / Brand / Location", placeholder="e.g. OPI, 1-A1, Holo").strip().lower()
 
-    all_locations, all_brands, all_finishes, all_color_families = get_unique_filter_values(df_raw)
-    all_collections = sorted([c for c in df_raw["collection"].unique() if c])
+    all_locations, all_brands, all_finishes, all_color_families, all_types = get_unique_filter_values(df_raw)
+    all_collections = sorted([c for c in df_raw["collection"].unique() if c], key=str.lower)
 
     sel_collections = st.multiselect("Collections", options=all_collections, default=[])
+    sel_types = st.multiselect("Nail Polish Types", options=all_types, default=[])
     sel_color_families = st.multiselect("Color Families", options=all_color_families, default=[])
     sel_locations = st.multiselect("Storage Locations", options=all_locations, default=[])
     sel_brands = st.multiselect("Brands", options=all_brands, default=[])
     sel_finishes = st.multiselect("Finishes", options=all_finishes, default=[])
 
+    # -------------------------------------------------------------
+    # EXCLUSION FILTERS (FILTER OUT)
+    # -------------------------------------------------------------
+    st.markdown("---")
+    with st.expander("🚫 Exclusion Filters (Filter OUT)", expanded=False):
+        st.caption("Select attributes or keywords you want to **EXCLUDE / HIDE** from the printed directory:")
+        
+        ex_types = st.multiselect("Exclude Formulation Types", options=all_types, default=[])
+        ex_brands = st.multiselect("Exclude Brands", options=all_brands, default=[])
+        ex_locations = st.multiselect("Exclude Storage Locations", options=all_locations, default=[])
+        ex_finishes = st.multiselect("Exclude Finishes", options=all_finishes, default=[])
+        ex_collections = st.multiselect("Exclude Collections", options=all_collections, default=[])
+        ex_search = st.text_input("Exclude Keyword / Search Word", placeholder="e.g. Destash, Sample, Topper").strip().lower()
+
+        st.markdown("**Quick Toggles:**")
+        ex_missing_color = st.checkbox("Hide Unswatched Polishes (Exclude missing color dots)", value=False)
+        ex_unrated = st.checkbox("Hide Unrated Polishes (Exclude 0.0 star rating)", value=False)
+
     doc_title = st.text_input("Directory Title", value="Nail Polish & Storage Location Directory")
 
 # -----------------------------------------------------------------------------
-# Filter Application
+# Filter Application (Inclusion & Negative Exclusion)
 # -----------------------------------------------------------------------------
 df_filtered = df_raw.copy()
 
+# 1. Inclusion Filters
 if search_query:
     mask = (
         df_filtered["shade_name"].str.lower().str.contains(search_query) |
         df_filtered["brand"].str.lower().str.contains(search_query) |
         df_filtered["location"].str.lower().str.contains(search_query) |
+        df_filtered["nail_type"].str.lower().str.contains(search_query) |
         df_filtered["finish"].str.lower().str.contains(search_query)
     )
     df_filtered = df_filtered[mask]
 
 if sel_collections:
     df_filtered = df_filtered[df_filtered["collection"].isin(sel_collections)]
+
+if sel_types:
+    df_filtered = df_filtered[df_filtered["nail_type"].isin(sel_types)]
 
 if sel_color_families:
     df_filtered = df_filtered[df_filtered["color_family"].isin(sel_color_families)]
@@ -213,14 +261,61 @@ if sel_finishes:
     pattern = "|".join(sel_finishes)
     df_filtered = df_filtered[df_filtered["finish"].str.contains(pattern, case=False, na=False)]
 
+# 2. Exclusion Filters
+if ex_collections:
+    df_filtered = df_filtered[~df_filtered["collection"].isin(ex_collections)]
+
+if ex_types:
+    df_filtered = df_filtered[~df_filtered["nail_type"].isin(ex_types)]
+
+if ex_brands:
+    df_filtered = df_filtered[~df_filtered["brand"].isin(ex_brands)]
+
+if ex_locations:
+    df_filtered = df_filtered[~df_filtered["location"].isin(ex_locations)]
+
+if ex_finishes:
+    ex_pattern = "|".join(ex_finishes)
+    df_filtered = df_filtered[~df_filtered["finish"].str.contains(ex_pattern, case=False, na=False)]
+
+if ex_search:
+    ex_mask = (
+        df_filtered["shade_name"].str.lower().str.contains(ex_search) |
+        df_filtered["brand"].str.lower().str.contains(ex_search) |
+        df_filtered["location"].str.lower().str.contains(ex_search) |
+        df_filtered["nail_type"].str.lower().str.contains(ex_search) |
+        df_filtered["finish"].str.lower().str.contains(ex_search)
+    )
+    df_filtered = df_filtered[~ex_mask]
+
+if ex_missing_color:
+    df_filtered = df_filtered[df_filtered["color_hex"] != ""]
+
+if ex_unrated:
+    df_filtered = df_filtered[df_filtered["rating_5"] > 0.0]
+
 # -----------------------------------------------------------------------------
-# Sorting Execution
+# CASE-INSENSITIVE NATURAL SORTING EXECUTION
 # -----------------------------------------------------------------------------
+df_filtered["_brand_sort"] = df_filtered["brand"].astype(str).str.lower()
+df_filtered["_shade_sort"] = df_filtered["shade_name"].astype(str).str.lower()
+df_filtered["_loc_sort"] = df_filtered["location"].astype(str).str.lower()
+df_filtered["_type_sort"] = df_filtered["nail_type"].astype(str).str.lower()
+
 sort_columns = []
 sort_ascending = []
 
 if grouping_choice == "color_family":
     sort_columns.append("color_sort_key")
+    sort_ascending.append(True)
+elif grouping_choice == "brand":
+    sort_columns.append("_brand_sort")
+    sort_ascending.append(True)
+elif grouping_choice == "location":
+    sort_columns.append("_loc_sort")
+    sort_ascending.append(True)
+elif grouping_choice == "nail_type":
+    sort_columns.append("_type_sort")
     sort_ascending.append(True)
 elif grouping_choice != "none":
     sort_columns.append(grouping_choice)
@@ -230,13 +325,13 @@ if sort_choice == "chromatic":
     sort_columns.extend(["hue", "saturation", "value"])
     sort_ascending.extend([True, False, False])
 elif sort_choice == "shade_name":
-    sort_columns.append("shade_name")
+    sort_columns.append("_shade_sort")
     sort_ascending.append(True)
 elif sort_choice == "brand":
-    sort_columns.append("brand")
+    sort_columns.append("_brand_sort")
     sort_ascending.append(True)
 elif sort_choice == "location":
-    sort_columns.append("location")
+    sort_columns.append("_loc_sort")
     sort_ascending.append(True)
 elif sort_choice == "rating_desc":
     sort_columns.append("rating_5")
@@ -245,13 +340,16 @@ elif sort_choice == "acq_desc":
     sort_columns.append("purchase_date")
     sort_ascending.append(False)
 
+if "_shade_sort" not in sort_columns:
+    sort_columns.append("_shade_sort")
+    sort_ascending.append(True)
+
 if sort_columns:
     df_filtered.sort_values(by=sort_columns, ascending=sort_ascending, inplace=True)
+    df_filtered.drop(columns=["_brand_sort", "_shade_sort", "_loc_sort", "_type_sort"], errors="ignore", inplace=True)
     df_filtered.reset_index(drop=True, inplace=True)
 
-# -----------------------------------------------------------------------------
 # Large Red Centered "EXPERIMENTAL" Header
-# -----------------------------------------------------------------------------
 st.markdown(
     """
     <div style="text-align: center; margin-top: -5px; margin-bottom: 8px;">
@@ -266,55 +364,66 @@ st.markdown(
 st.title("💅 Polish & Storage Location Directory")
 
 # -----------------------------------------------------------------------------
-# Instructions & User Guide Expander
+# Instructions Expander
 # -----------------------------------------------------------------------------
 with st.expander("📖 User Guide & Operating Instructions", expanded=False):
     st.markdown("""
-### How to Use the Directory Studio
+### Welcome to the Polish & Storage Directory Studio!
 
-Welcome to the **Polish & Storage Location Directory** generator! This application produces publication-quality, 300 DPI reference documents formatted for physical 3-ring binders, desk index sheets, and drawer walk-throughs.
-
----
-
-#### 1. 📑 Organization & Ordering Modes
-* **🌈 Color Spectrum:** Converts your polish hex codes to the HSV color space and groups them into natural rainbow families (*Reds $\\rightarrow$ Oranges $\\rightarrow$ Yellows $\\rightarrow$ Greens $\\rightarrow$ Blues $\\rightarrow$ Purples $\\rightarrow$ Pinks*).
-* **🏷️ Brand:** Alphabetizes by manufacturer (e.g. *ILNP, Mooncat, OPI*) with dedicated group headers. Redundant brand prefixes in shade names are stripped automatically.
-* **📦 Storage Location:** Groups polishes by their physical Helmer drawer, box, or grid slot (e.g. *1-A1 through 1-H8*).
-* **✨ Finish / Effect:** Groups items by lacquer formulation (e.g. *Linear Holo, Creme, Flake, Magnetic*).
+This application generates archival, publication-quality 300 DPI reference catalogs formatted specifically for physical 3-ring binders, desk reference sheets, and drawer inserts.
 
 ---
 
-#### 2. 📚 Swatch Book Manager (Incremental Printing)
-* **Never Waste Paper or Cardstock:** When you add 5 new polishes to your collection, you do *not* need to reprint your entire binder.
-* **Replacement Page Logic:** The manager tracks how many polishes are in your physical book. If your last sheet has empty slots (e.g. 6 polishes on a 24-slot sheet), the incremental generator outputs **only that last sheet** (filled with your 5 new additions) plus any subsequent overflow sheets.
-* **The Workflow:**
-  1. Select or create your physical album in the **📚 Swatch Book Manager** tab.
-  2. Click **'🚀 Compile Incremental Update Sheet(s)'**.
-  3. Print the PDF, slip the replacement sheet into your binder, and click **'✅ Mark as Printed & Commit to Book'**.
+#### 1. 💅 Default Coat Count Configuration
+* **Configurable Default Coats:** You can configure the default coat count fallback (default is **3 coats** $\\rightarrow$ `●●●`). Any polish in your collection without a specific coat count recorded in Koillection will display this default. Polishes with explicit coat counts (e.g. 1 or 2 coats) will preserve their exact count.
 
 ---
 
-#### 3. 🎨 Customization Deck (Sidebar)
-* **Typography:** Choose between clean sans-serif (*Helvetica*), classic editorial serif (*Times-Roman*), or technical (*Courier*).
-* **Color Themes:** Select from elegant pre-built palettes (*Navy Slate, Plum Velvet, Emerald Garden, Classic Monolith*) or pick your own custom hex colors for section banners, table headers, and zebra stripes.
-* **Column Selector:** Turn columns on or off. Table widths dynamically re-balance to exactly fill the 8.5" × 11" printable area.
+#### 2. 🔤 Natural Case-Insensitive Alphabetical Sorting
+* **Case-Insensitive A–Z:** Brands and shade names sort in true natural order. Lowercase brand names (e.g. *cirque colors* or *essie*) appear alongside capitalized brands without being shoved to the end of the alphabet.
 
 ---
 
-#### 4. 🖨️ Recommended Print Settings
-* **Paper Stock:** Standard 24–28 lb bright white paper for daily binders, or 65 lb smooth cardstock for durable reference manuals.
-* **Printer Driver:** Set page scaling to **'Actual Size'** or **'100%'** (do *not* use "Fit to Page") to preserve razor-sharp 300 DPI vector clarity.
+#### 3. 🔍 Filtering In & Filtering OUT
+* **Inclusion Filters:** Select specific Brands, Collections, Formulation Types, or Finishes you want to include.
+* **🚫 Exclusion Filters (Filter OUT):** Open the *"Exclusion Filters"* panel in the sidebar to omit specific records:
+  * **Omit Formulation Types:** Easily hide *UV Gel*, *Cuticle Oils*, or *Treatments* when compiling an air-dry lacquer catalog.
+  * **Omit Locations:** Exclude *Unassigned* bottles, *Display Shelves*, or *Destash Drawers*.
+  * **Exclude by Keyword:** Type words like *"destash"*, *"mini"*, or *"topper"* to purge matching records.
+  * **Hide Unswatched Bottles:** Check *"Hide Unswatched Polishes"* to ensure every printed item on your sheet has a verified swatch dot!
+
+---
+
+#### 4. 🧪 Formulation Types vs. Aesthetic Finishes
+* **Formulation Type Column (`Type`):** Features dedicated vector icons for your application system (*Regular Nail Lacquer, UV Gel Nail Lacquer, Top Coat, Base Coat, Cuticle Oil, Nail Treatment, Liquid Latex, Drying Drops, Stamping Lacquer, Press-On Glue*).
+* **Aesthetic Finish Column (`Finish`):** Displays visual lacquer effects (*Linear Holo, Creme, Shimmer, Flakie, Metallic, etc.*) with zero repetition.
+* **Multi-Icon Mode:** When *"Multi-Icon Finish Mode"* is enabled, polishes with compound finishes (e.g. *Holo + Flakies + Shimmer*) display up to 4 vector icons side-by-side across the column without text clutter.
+
+---
+
+#### 5. 📚 Swatch Book Manager (Incremental Printing)
+* **Never Waste Paper or Cardstock:** When you add new polishes to your collection, the manager tracks how many polishes are in your physical book. If your last sheet has empty slots, it outputs **only that last sheet** (filled with your new additions) plus any subsequent overflow sheets.
     """)
+
+st.markdown("---")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Polishes Selected", f"{len(df_filtered)} / {len(df_raw)}")
+col2.metric("Unique Brands", len(df_filtered["brand"].unique()))
+col3.metric("Storage Locations", len(df_filtered["location"].unique()))
+avg_rating = df_filtered[df_filtered["rating_5"] > 0]["rating_5"].mean()
+col4.metric("Avg Rating", f"{avg_rating:.1f} ★" if not pd.isna(avg_rating) else "N/A")
 
 st.markdown("---")
 
 # -----------------------------------------------------------------------------
 # Main Navigation Tabs
 # -----------------------------------------------------------------------------
-tab_books, tab_table, tab_full_pdf = st.tabs([
+tab_books, tab_table, tab_full_pdf, tab_legend = st.tabs([
     "📚 Swatch Book Manager & Incremental Print",
     "📋 Live Inventory Preview",
-    "🖨️ Full Catalog Print"
+    "🖨️ Full Catalog Print",
+    "📑 Icon Legend (1-Page)"
 ])
 
 # -----------------------------------------------------------------------------
@@ -408,7 +517,9 @@ with tab_books:
                             zebra_bg=c_zebra_bg,
                             compact_mode=compact_density,
                             start_page_num=page_state["start_page_num"],
-                            header_subtitle=sub_title
+                            header_subtitle=sub_title,
+                            finish_icon_only=finish_icon_only,
+                            default_coats=default_coats
                         )
                         st.session_state.vault["pdf_bytes"] = pdf_bytes
                         st.session_state.vault["pending_commit_ids"] = page_state["unprinted_df"]["item_id"].tolist()
@@ -468,22 +579,28 @@ with tab_books:
 # TAB 2: LIVE INVENTORY PREVIEW
 # -----------------------------------------------------------------------------
 with tab_table:
-    st.caption(f"Showing {len(df_filtered)} polishes sorted by: {grouping_choice} ➜ {sort_choice}")
-    for expected_col in ["color_hex", "color_family", "location", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"]:
+    st.caption(f"Showing {len(df_filtered)} matching polishes after active inclusion and exclusion filters.")
+    for expected_col in ["color_hex", "color_family", "nail_type", "location", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"]:
         if expected_col not in df_filtered.columns:
             df_filtered[expected_col] = ""
 
     display_df = df_filtered[[
-        "location", "color_hex", "color_family", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"
+        "location", "color_hex", "nail_type", "color_family", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"
     ]].copy()
     
+    # Apply default coats to preview table for unlisted polishes
+    display_df["coats"] = display_df["coats"].apply(
+        lambda x: f"{default_coats} (default)" if not str(x).strip() or str(x).strip() in ["", "None", "nan", "0"] else str(x).strip()
+    )
+
     display_df.rename(columns={
         "location": "Location",
         "color_hex": "Hex",
+        "nail_type": "Formulation Type",
         "color_family": "Spectrum Family",
         "brand": "Brand",
         "shade_name": "Shade Name",
-        "finish": "Finish",
+        "finish": "Finish (Aesthetic)",
         "coats": "Coats",
         "rating_5": "Rating (0-5)",
         "size_oz": "Size",
@@ -507,8 +624,8 @@ with tab_table:
 with tab_full_pdf:
     st.subheader("Publication-Quality Complete Catalog")
     st.write(
-        "Compile your complete collection from scratch with distinct section headers "
-        "for every group (e.g. Color Spectrum, Brand, or Location)."
+        "Compile your complete collection from scratch with distinct section headers, "
+        "separated Type / Finish columns, and respecting all active inclusion and exclusion filters."
     )
 
     if st.button("🚀 Compile Full Collection PDF", type="primary"):
@@ -526,7 +643,9 @@ with tab_full_pdf:
                     header_text=c_header_txt,
                     zebra_bg=c_zebra_bg,
                     compact_mode=compact_density,
-                    start_page_num=1
+                    start_page_num=1,
+                    finish_icon_only=finish_icon_only,
+                    default_coats=default_coats
                 )
                 st.session_state.vault["pdf_bytes"] = full_pdf_data
                 st.success("Complete catalog compiled!")
@@ -541,5 +660,31 @@ with tab_full_pdf:
         base64_pdf = base64.b64encode(current_pdf).decode("utf-8")
         st.markdown(
             f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>',
+            unsafe_allow_html=True
+        )
+
+# -----------------------------------------------------------------------------
+# TAB 4: ICON LEGEND (EXACTLY 1 PAGE)
+# -----------------------------------------------------------------------------
+with tab_legend:
+    st.subheader("📑 Visual Icon & Formulation Legend Sheet")
+    st.write(
+        "Generate a standalone, publication-quality **single 8.5\" × 11\" US Letter page** "
+        "explaining all 11 formulation types, 22 lacquer finishes, coat opacities, and swatch indicators. "
+        "Designed to be slipped inside your binder front cover or taped to a drawer insert."
+    )
+
+    if st.button("🖨️ Compile 1-Page Icon Legend Sheet", type="primary"):
+        with st.spinner("Formatting legend grid..."):
+            legend_data = build_legend_pdf(font_family=font_choice, banner_bg=c_banner_bg, banner_text=c_banner_txt)
+            st.session_state.vault["legend_bytes"] = legend_data
+            st.success("1-Page Legend sheet compiled successfully!")
+
+    current_legend = st.session_state.vault.get("legend_bytes")
+    if current_legend:
+        render_html5_download_button(current_legend, "Nail_Polish_Icon_Legend_Sheet.pdf", "⬇️ Download 1-Page Legend PDF")
+        base64_legend = base64.b64encode(current_legend).decode("utf-8")
+        st.markdown(
+            f'<iframe src="data:application/pdf;base64,{base64_legend}" width="100%" height="850" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>',
             unsafe_allow_html=True
         )

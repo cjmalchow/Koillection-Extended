@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 import colorsys
@@ -16,29 +17,38 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "local_polish_vault_2026")
 
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+HEX_REGEX = re.compile(r'#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b')
+
+TYPE_KEYWORDS = [
+    "regular nail lacquer", "regular", "uv gel nail lacquer", "uv gel", "gel",
+    "cuticle oil", "nail treatment", "liquid latex", "drying drops",
+    "stamping air dry lacquer", "latex tape", "top coat", "baee coat", "base coat",
+    "press on glue/releaser", "press on glue", "glue"
+]
+
 
 def get_engine():
     return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 
 
 def unwrap_datum_value(raw_val: str) -> str:
-    if not raw_val:
+    if raw_val is None:
         return ""
     val_str = str(raw_val).strip()
     if (val_str.startswith("[") and val_str.endswith("]")) or (val_str.startswith("{") and val_str.endswith("}")):
         try:
             parsed = json.loads(val_str)
             if isinstance(parsed, list):
-                return ", ".join(str(item).strip() for item in parsed if item is not None and str(item).strip())
+                cleaned = [str(item).strip() for item in parsed if item is not None and str(item).strip()]
+                return ", ".join(cleaned)
             elif isinstance(parsed, dict):
                 return ", ".join(f"{k}: {v}" for k, v in parsed.items())
         except Exception:
             return val_str.strip('[]"\'')
-    return val_str
+    return val_str.strip('[]"\'')
 
 
 def clean_shade_name(raw_shade: str, brand: str) -> str:
-    """Strips duplicate brand prefixes like 'OPI - Black Onyx' -> 'Black Onyx'."""
     if not raw_shade:
         return "Untitled Shade"
     s = str(raw_shade).strip()
@@ -51,11 +61,22 @@ def clean_shade_name(raw_shade: str, brand: str) -> str:
     return s
 
 
+def extract_valid_hex(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    clean = unwrap_datum_value(raw_text)
+    match = HEX_REGEX.search(clean)
+    if match:
+        hex_str = match.group(0).upper()
+        if not hex_str.startswith("#"):
+            hex_str = f"#{hex_str}"
+        if len(hex_str) == 4:
+            hex_str = f"#{hex_str[1]*2}{hex_str[2]*2}{hex_str[3]*2}"
+        return hex_str
+    return ""
+
+
 def hex_to_color_profile(hex_code: str):
-    """
-    Converts a Hex string into HSV values, a natural Color Family name,
-    and a chromatic sort index for true rainbow sorting.
-    """
     if not hex_code:
         return 999.0, 0.0, 0.0, "No Color Set", 99
 
@@ -70,7 +91,6 @@ def hex_to_color_profile(hex_code: str):
         h, s, v = colorsys.rgb_to_hsv(r, g, b)
         h_deg = h * 360.0
 
-        # Classification into natural nail polish color families
         if v < 0.20:
             family = "Blacks & Deep Charcoals"
             sort_order = 1
@@ -148,8 +168,10 @@ def fetch_polish_inventory() -> pd.DataFrame:
                 "collection": row.collection_title or "Uncategorized",
                 "brand": "Unknown Brand",
                 "color_hex": "",
-                "finish": "Unknown",
-                "coats": "2",
+                "has_exact_hex": False,
+                "nail_type": "Regular Nail Lacquer",
+                "finish": "Creme",
+                "coats": "",       # Unset so app setting default can apply dynamically
                 "size_oz": "",
                 "purchase_date": "",
                 "location": "Unassigned",
@@ -166,25 +188,53 @@ def fetch_polish_inventory() -> pd.DataFrame:
         label_lower = label.lower()
         datum_type = (row.datum_type or "").lower()
         
-        # Color hex extraction (Explicitly handles 'Colour (Hex)')
-        if "colour (hex)" in label_lower or "color (hex)" in label_lower or datum_type == "color" or any(k in label_lower for k in ["color", "colour", "hex"]):
-            c_val = clean_val.strip().split(",")[0].strip()
-            if c_val:
-                if not c_val.startswith("#") and len(c_val) in [3, 6]:
-                    c_val = "#" + c_val
-                polishes[item_id]["color_hex"] = c_val
+        # 1. Exact Hex Fields
+        if "colour (hex)" in label_lower or "color (hex)" in label_lower or label_lower == "hex" or datum_type == "color":
+            if not polishes[item_id]["has_exact_hex"]:
+                found_hex = extract_valid_hex(clean_val)
+                if found_hex:
+                    polishes[item_id]["color_hex"] = found_hex
+                    polishes[item_id]["has_exact_hex"] = True
+
+        # 2. Descriptive Color Fallback
+        elif label_lower in ["color", "colour", "primary color", "swatch color"]:
+            if not polishes[item_id]["has_exact_hex"] and not polishes[item_id]["color_hex"]:
+                found_hex = extract_valid_hex(clean_val)
+                if found_hex:
+                    polishes[item_id]["color_hex"] = found_hex
+
+        # 3. Formulation Type
+        elif label_lower in ["nail polish type", "polish type", "type"]:
+            if clean_val:
+                polishes[item_id]["nail_type"] = clean_val
+
+        # 4. Brand
         elif label_lower == "brand":
             polishes[item_id]["brand"] = clean_val or "Unknown Brand"
-        elif label_lower in ["finish", "lacquer type", "type"]:
-            polishes[item_id]["finish"] = clean_val or "Standard"
+
+        # 5. Aesthetic Finish
+        elif label_lower in ["finish", "finish (colour picker)", "lacquer finish", "effect"]:
+            if clean_val:
+                polishes[item_id]["finish"] = clean_val
+
+        # 6. Coats (Only sets if explicitly entered in Koillection)
         elif label_lower in ["coats", "coat count"]:
-            polishes[item_id]["coats"] = clean_val or "2"
+            if clean_val and clean_val.strip() not in ["", "None", "nan", "0"]:
+                polishes[item_id]["coats"] = clean_val.strip()
+
+        # 7. Size
         elif "size" in label_lower:
             polishes[item_id]["size_oz"] = clean_val
+
+        # 8. Purchase Date
         elif label_lower in ["purchase date", "acquisition date", "date"]:
             polishes[item_id]["purchase_date"] = clean_val
+
+        # 9. Location
         elif label_lower in ["location", "storage location", "slot"]:
             polishes[item_id]["location"] = clean_val or "Unassigned"
+
+        # 10. Star Rating
         elif label_lower in ["overall rating", "rating"]:
             try:
                 raw_score = float(clean_val)
@@ -193,9 +243,28 @@ def fetch_polish_inventory() -> pd.DataFrame:
             except (ValueError, TypeError):
                 polishes[item_id]["rating_5"] = 0.0
 
-    # Enrich polishes with cleaned names, color metadata, and grouping fields
+    # Clean & Deduplicate fields
     for p in polishes.values():
         p["shade_name"] = clean_shade_name(p["raw_shade_name"], p["brand"])
+        
+        raw_finish_parts = [piece.strip() for piece in str(p["finish"]).split(",") if piece.strip()]
+        cleaned_finish_parts = []
+        for part in raw_finish_parts:
+            part_lower = part.lower()
+            if any(tk in part_lower for tk in TYPE_KEYWORDS):
+                if p["nail_type"] == "Regular Nail Lacquer":
+                    p["nail_type"] = part
+            else:
+                cleaned_finish_parts.append(part)
+                
+        p["finish"] = ", ".join(cleaned_finish_parts) if cleaned_finish_parts else "Creme"
+
+        t_lower = p["nail_type"].lower()
+        if "uv gel" in t_lower or "gel" in t_lower:
+            p["nail_type"] = "UV Gel Nail Lacquer"
+        elif "regular" in t_lower or "lacquer" in t_lower and not any(k in t_lower for k in ["top", "base", "stamping"]):
+            p["nail_type"] = "Regular Nail Lacquer"
+
         h_deg, s, v, family, sort_order = hex_to_color_profile(p["color_hex"])
         p["hue"] = h_deg
         p["saturation"] = s
@@ -203,7 +272,6 @@ def fetch_polish_inventory() -> pd.DataFrame:
         p["color_family"] = family
         p["color_sort_key"] = sort_order
 
-        # Rating tier string for grouping
         r = p["rating_5"]
         if r >= 4.5:
             p["rating_group"] = "5 Stars (Holy Grails)"
@@ -216,21 +284,28 @@ def fetch_polish_inventory() -> pd.DataFrame:
         else:
             p["rating_group"] = "Unrated"
 
-        # Acquisition year for chronological grouping
         acq = str(p["purchase_date"] or "")
         p["acquisition_year"] = acq[:4] if (len(acq) >= 4 and acq[:4].isdigit()) else "Undated"
 
     df = pd.DataFrame(list(polishes.values()))
-    df.sort_values(by=["location", "brand", "shade_name"], inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    
+    if not df.empty:
+        df["_loc_sort"] = df["location"].astype(str).str.lower()
+        df["_brand_sort"] = df["brand"].astype(str).str.lower()
+        df["_shade_sort"] = df["shade_name"].astype(str).str.lower()
+        df.sort_values(by=["_loc_sort", "_brand_sort", "_shade_sort"], inplace=True)
+        df.drop(columns=["_loc_sort", "_brand_sort", "_shade_sort"], errors="ignore", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        
     return df
 
 
 def get_unique_filter_values(df: pd.DataFrame):
     if df.empty:
-        return [], [], [], []
-    locations = sorted([loc for loc in df["location"].unique() if loc])
-    brands = sorted([b for b in df["brand"].unique() if b and b != "Unknown Brand"])
+        return [], [], [], [], []
+    locations = sorted([loc for loc in df["location"].unique() if loc], key=str.lower)
+    brands = sorted([b for b in df["brand"].unique() if b and b != "Unknown Brand"], key=str.lower)
+    types = sorted([t for t in df["nail_type"].unique() if t], key=str.lower)
     color_families = sorted([cf for cf in df["color_family"].unique() if cf])
     finishes = set()
     for f_val in df["finish"].dropna():
@@ -238,4 +313,4 @@ def get_unique_filter_values(df: pd.DataFrame):
             p = piece.strip()
             if p:
                 finishes.add(p)
-    return locations, brands, sorted(list(finishes)), color_families
+    return locations, brands, sorted(list(finishes), key=str.lower), color_families, types
