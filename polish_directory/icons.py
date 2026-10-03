@@ -249,7 +249,7 @@ def get_type_icon_image(type_name: str, size: int = 24) -> Image.Image:
 
 
 # -------------------------------------------------------------------------
-# ALL 22 AESTHETIC FINISHES (Distinct Geometric Silhouettes & Color Themes)
+# AESTHETIC FINISH VECTOR GLYPHS
 # -------------------------------------------------------------------------
 
 def _draw_creme(draw, w, h):
@@ -257,6 +257,29 @@ def _draw_creme(draw, w, h):
     cx, cy, r = w / 2, h / 2, w * 0.36
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#C2185B")
     draw.arc([cx - r * 0.7, cy - r * 0.7, cx + r * 0.7, cy + r * 0.7], 190, 260, fill="#FFFFFF", width=int(w * 0.08))
+
+
+def _draw_confetti(draw, w, h):
+    # Festive party confetti: vibrant matte sequins and angled streamer ribbons
+    cx, cy = w / 2, h / 2
+
+    # Angled ticker-tape streamers (Neon Magenta and Lime)
+    draw.line([(w * 0.18, h * 0.28), (w * 0.46, h * 0.14)], fill="#E040FB", width=int(w * 0.09))
+    draw.line([(w * 0.54, h * 0.74), (w * 0.84, h * 0.54)], fill="#00E676", width=int(w * 0.08))
+
+    # Floating round matte confetti sequins
+    dots = [
+        (w * 0.28, h * 0.65, w * 0.13, "#FF1744"),  # Coral Red dot
+        (w * 0.74, h * 0.28, w * 0.11, "#00E5FF"),  # Bright Cyan dot
+        (w * 0.68, h * 0.82, w * 0.09, "#FFD600"),  # Sunny Yellow dot
+        (w * 0.16, h * 0.44, w * 0.08, "#FF9100"),  # Tangerine dot
+    ]
+    for dx, dy, r, color in dots:
+        draw.ellipse([dx - r, dy - r, dx + r, dy + r], fill=color)
+
+    # Center diamond sequin (Electric Blue)
+    s = w * 0.11
+    draw.polygon([(cx, cy - s), (cx + s, cy), (cx, cy + s), (cx - s, cy)], fill="#2979FF")
 
 
 def _draw_shimmer(draw, w, h):
@@ -350,7 +373,6 @@ def _draw_magnetic(draw, w, h):
 def _draw_solar(draw, w, h):
     # Sunburst with UV Flares: Golden core with violet UV ray spikes
     cx, cy = w / 2, h / 2
-    # Radiating UV violet rays
     for i in range(8):
         angle = i * (math.pi / 4)
         x1 = cx + (w * 0.22) * math.cos(angle)
@@ -358,7 +380,6 @@ def _draw_solar(draw, w, h):
         x2 = cx + (w * 0.44) * math.cos(angle)
         y2 = cy + (h * 0.44) * math.sin(angle)
         draw.line([(x1, y1), (x2, y2)], fill="#7B1FA2", width=int(w * 0.08))
-    # Golden sun orb
     draw.ellipse([cx - w * 0.20, cy - h * 0.20, cx + w * 0.20, cy + h * 0.20], fill="#FBC02D")
 
 
@@ -380,7 +401,6 @@ def _draw_foil(draw, w, h):
     # Multi-faceted gold leaf jewel polygon
     cx, cy, s = w / 2, h / 2, w * 0.38
     draw.polygon([(cx, cy - s), (cx + s, cy), (cx, cy + s), (cx - s, cy)], fill="#FFB300")
-    # Internal facet creases
     draw.line([(cx, cy - s), (cx, cy + s)], fill="#FFE082", width=int(w * 0.07))
     draw.line([(cx - s, cy), (cx + s, cy)], fill="#FF8F00", width=int(w * 0.07))
     draw.polygon([(cx, cy - s * 0.4), (cx + s * 0.4, cy), (cx, cy + s * 0.4), (cx - s * 0.4, cy)], fill="#FFF8E1")
@@ -405,7 +425,6 @@ def _draw_sheer(draw, w, h):
     cx, cy, r = w / 2, h / 2, w * 0.36
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#F3E5F5")
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#8E24AA", width=max(1, int(1.2 * SS)))
-    # Interior translucent accent dots
     for ox, oy in [(-r * 0.4, 0), (r * 0.4, 0), (0, -r * 0.4), (0, r * 0.4)]:
         draw.ellipse([cx + ox - 2 * SS, cy + oy - 2 * SS, cx + ox + 2 * SS, cy + oy + 2 * SS], fill="#BA68C8")
 
@@ -419,14 +438,12 @@ def _draw_glow(draw, w, h):
     m_draw.ellipse([cx - w * 0.18, cy - h * 0.46, cx + w * 0.46, cy + h * 0.26], fill=0)
     glow_color = Image.new("RGBA", (w, h), "#00E676")
     draw._image.paste(glow_color, (0, 0), moon_img)
-    # Radiance glint
     draw.ellipse([cx + w * 0.18, cy - h * 0.24, cx + w * 0.28, cy - h * 0.14], fill="#B9F6CA")
 
 
 def _draw_glass_fleck(draw, w, h):
     # Radiant 4-point crystal star with bright cyan/aquamarine mica flecks
     cx, cy = w / 2, h / 2
-    # 4 crystal spikes
     for angle_deg in [0, 45, 90, 135]:
         rad = math.radians(angle_deg)
         x1 = cx + (w * 0.40) * math.cos(rad)
@@ -440,9 +457,7 @@ def _draw_glass_fleck(draw, w, h):
 def _draw_multichrome(draw, w, h):
     # Dual shifting chromatic diamonds: Emerald Green overlapping Royal Purple
     cx, cy, s = w / 2, h / 2, w * 0.26
-    # Left diamond (Royal Purple)
     draw.polygon([(cx - s * 0.6, cy - s), (cx + s * 0.4, cy), (cx - s * 0.6, cy + s), (cx - s * 1.6, cy)], fill="#AA00FF")
-    # Right diamond (Emerald Green)
     draw.polygon([(cx + s * 0.6, cy - s), (cx + s * 1.6, cy), (cx + s * 0.6, cy + s), (cx - s * 0.4, cy)], fill="#00E676")
 
 
@@ -450,7 +465,6 @@ def _draw_crackle(draw, w, h):
     # Shattered ceramic tile: crimson background fractured by dark slate spiderweb fissures
     margin = w * 0.16
     draw.rectangle([margin, margin, w - margin, h - margin], fill="#D32F2F")
-    # Crack lines
     draw.line([(w * 0.16, h * 0.35), (w * 0.48, h * 0.52)], fill="#212121", width=int(w * 0.08))
     draw.line([(w * 0.48, h * 0.52), (w * 0.84, h * 0.28)], fill="#212121", width=int(w * 0.08))
     draw.line([(w * 0.48, h * 0.52), (w * 0.38, h * 0.84)], fill="#212121", width=int(w * 0.08))
@@ -477,6 +491,8 @@ def _draw_textured(draw, w, h):
 FINISH_RENDERERS = {
     "creme": _draw_creme,
     "cream": _draw_creme,
+    "confetti": _draw_confetti,
+    "party": _draw_confetti,
     "shimmer": _draw_shimmer,
     "glitter": _draw_glitter,
     "holo": _draw_holo,

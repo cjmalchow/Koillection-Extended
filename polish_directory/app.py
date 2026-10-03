@@ -128,7 +128,6 @@ with st.sidebar:
             value=True
         )
 
-        # CONFIGURABLE DEFAULT COAT COUNT (Defaults to 3)
         default_coats = st.number_input(
             "Default # of Coats (when unlisted)",
             min_value=1,
@@ -137,6 +136,39 @@ with st.sidebar:
             step=1,
             help="Fallback coat count for polishes that don't have a coat count specified in Koillection."
         )
+
+        # DYNAMIC FIT OPTIMIZER SELECTOR
+        density_mode = st.radio(
+            "Page Density Strategy",
+            options=["⚡ Automatic (Optimal Dynamic Fit)", "Manual Row Count"],
+            index=0,
+            help="Automatic uses our constraint algorithm to dynamically fill 100% of the page based on row wrapping and legend footprint."
+        )
+
+        if density_mode == "Manual Row Count":
+            rows_per_page = st.number_input("Fixed Polishes per Page", min_value=20, max_value=36, value=30, step=1)
+        else:
+            rows_per_page = 0  # 0 signals the dynamic knapsack algorithm
+
+        legend_choice = st.selectbox(
+            "Directory Legend Mode",
+            options=[
+                "Contextual Per-Page Footer (Active icons only)",
+                "None (Standalone Only)",
+                "First Page Cover Sheet (Full master key)",
+                "Last Page Appendix (Full master key)"
+            ],
+            index=0,
+            help="Choose how visual decode keys are embedded into your printable directory."
+        )
+
+        legend_mode_map = {
+            "Contextual Per-Page Footer (Active icons only)": "per_page",
+            "None (Standalone Only)": "none",
+            "First Page Cover Sheet (Full master key)": "first_page",
+            "Last Page Appendix (Full master key)": "last_page"
+        }
+        selected_legend_mode = legend_mode_map[legend_choice]
 
         st.markdown("**Columns to Print:**")
         all_col_options = {
@@ -231,7 +263,6 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 df_filtered = df_raw.copy()
 
-# 1. Inclusion Filters
 if search_query:
     mask = (
         df_filtered["shade_name"].str.lower().str.contains(search_query) |
@@ -261,7 +292,6 @@ if sel_finishes:
     pattern = "|".join(sel_finishes)
     df_filtered = df_filtered[df_filtered["finish"].str.contains(pattern, case=False, na=False)]
 
-# 2. Exclusion Filters
 if ex_collections:
     df_filtered = df_filtered[~df_filtered["collection"].isin(ex_collections)]
 
@@ -349,7 +379,6 @@ if sort_columns:
     df_filtered.drop(columns=["_brand_sort", "_shade_sort", "_loc_sort", "_type_sort"], errors="ignore", inplace=True)
     df_filtered.reset_index(drop=True, inplace=True)
 
-# Large Red Centered "EXPERIMENTAL" Header
 st.markdown(
     """
     <div style="text-align: center; margin-top: -5px; margin-bottom: 8px;">
@@ -363,9 +392,6 @@ st.markdown(
 
 st.title("💅 Polish & Storage Location Directory")
 
-# -----------------------------------------------------------------------------
-# Instructions Expander
-# -----------------------------------------------------------------------------
 with st.expander("📖 User Guide & Operating Instructions", expanded=False):
     st.markdown("""
 ### Welcome to the Polish & Storage Directory Studio!
@@ -375,7 +401,7 @@ This application generates archival, publication-quality 300 DPI reference catal
 ---
 
 #### 1. 💅 Default Coat Count Configuration
-* **Configurable Default Coats:** You can configure the default coat count fallback (default is **3 coats** $\\rightarrow$ `●●●`). Any polish in your collection without a specific coat count recorded in Koillection will display this default. Polishes with explicit coat counts (e.g. 1 or 2 coats) will preserve their exact count.
+* **Configurable Default Coats:** You can configure the default coat count fallback (default is **3 coats** $\\rightarrow$ `●●●`). Any polish in your collection without a specific coat count recorded in Koillection will display this default.
 
 ---
 
@@ -386,23 +412,14 @@ This application generates archival, publication-quality 300 DPI reference catal
 
 #### 3. 🔍 Filtering In & Filtering OUT
 * **Inclusion Filters:** Select specific Brands, Collections, Formulation Types, or Finishes you want to include.
-* **🚫 Exclusion Filters (Filter OUT):** Open the *"Exclusion Filters"* panel in the sidebar to omit specific records:
-  * **Omit Formulation Types:** Easily hide *UV Gel*, *Cuticle Oils*, or *Treatments* when compiling an air-dry lacquer catalog.
-  * **Omit Locations:** Exclude *Unassigned* bottles, *Display Shelves*, or *Destash Drawers*.
-  * **Exclude by Keyword:** Type words like *"destash"*, *"mini"*, or *"topper"* to purge matching records.
-  * **Hide Unswatched Bottles:** Check *"Hide Unswatched Polishes"* to ensure every printed item on your sheet has a verified swatch dot!
+* **🚫 Exclusion Filters (Filter OUT):** Open the *"Exclusion Filters"* panel in the sidebar to omit specific records.
 
 ---
 
 #### 4. 🧪 Formulation Types vs. Aesthetic Finishes
-* **Formulation Type Column (`Type`):** Features dedicated vector icons for your application system (*Regular Nail Lacquer, UV Gel Nail Lacquer, Top Coat, Base Coat, Cuticle Oil, Nail Treatment, Liquid Latex, Drying Drops, Stamping Lacquer, Press-On Glue*).
-* **Aesthetic Finish Column (`Finish`):** Displays visual lacquer effects (*Linear Holo, Creme, Shimmer, Flakie, Metallic, etc.*) with zero repetition.
-* **Multi-Icon Mode:** When *"Multi-Icon Finish Mode"* is enabled, polishes with compound finishes (e.g. *Holo + Flakies + Shimmer*) display up to 4 vector icons side-by-side across the column without text clutter.
-
----
-
-#### 5. 📚 Swatch Book Manager (Incremental Printing)
-* **Never Waste Paper or Cardstock:** When you add new polishes to your collection, the manager tracks how many polishes are in your physical book. If your last sheet has empty slots, it outputs **only that last sheet** (filled with your new additions) plus any subsequent overflow sheets.
+* **Formulation Type Column (`Type`):** Features dedicated vector icons for your application system.
+* **Aesthetic Finish Column (`Finish`):** Displays visual lacquer effects.
+* **Multi-Icon Mode:** Displays up to 4 vector icons side-by-side across the column without text clutter.
     """)
 
 st.markdown("---")
@@ -416,9 +433,6 @@ col4.metric("Avg Rating", f"{avg_rating:.1f} ★" if not pd.isna(avg_rating) els
 
 st.markdown("---")
 
-# -----------------------------------------------------------------------------
-# Main Navigation Tabs
-# -----------------------------------------------------------------------------
 tab_books, tab_table, tab_full_pdf, tab_legend = st.tabs([
     "📚 Swatch Book Manager & Incremental Print",
     "📋 Live Inventory Preview",
@@ -519,7 +533,9 @@ with tab_books:
                             start_page_num=page_state["start_page_num"],
                             header_subtitle=sub_title,
                             finish_icon_only=finish_icon_only,
-                            default_coats=default_coats
+                            default_coats=default_coats,
+                            legend_mode=selected_legend_mode,
+                            rows_per_page=rows_per_page
                         )
                         st.session_state.vault["pdf_bytes"] = pdf_bytes
                         st.session_state.vault["pending_commit_ids"] = page_state["unprinted_df"]["item_id"].tolist()
@@ -588,7 +604,6 @@ with tab_table:
         "location", "color_hex", "nail_type", "color_family", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"
     ]].copy()
     
-    # Apply default coats to preview table for unlisted polishes
     display_df["coats"] = display_df["coats"].apply(
         lambda x: f"{default_coats} (default)" if not str(x).strip() or str(x).strip() in ["", "None", "nan", "0"] else str(x).strip()
     )
@@ -645,7 +660,9 @@ with tab_full_pdf:
                     compact_mode=compact_density,
                     start_page_num=1,
                     finish_icon_only=finish_icon_only,
-                    default_coats=default_coats
+                    default_coats=default_coats,
+                    legend_mode=selected_legend_mode,
+                    rows_per_page=rows_per_page
                 )
                 st.session_state.vault["pdf_bytes"] = full_pdf_data
                 st.success("Complete catalog compiled!")
@@ -670,8 +687,7 @@ with tab_legend:
     st.subheader("📑 Visual Icon & Formulation Legend Sheet")
     st.write(
         "Generate a standalone, publication-quality **single 8.5\" × 11\" US Letter page** "
-        "explaining all 11 formulation types, 22 lacquer finishes, coat opacities, and swatch indicators. "
-        "Designed to be slipped inside your binder front cover or taped to a drawer insert."
+        "explaining all 11 formulation types, 22 lacquer finishes, coat opacities, and swatch indicators."
     )
 
     if st.button("🖨️ Compile 1-Page Icon Legend Sheet", type="primary"):
