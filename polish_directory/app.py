@@ -103,7 +103,7 @@ with st.sidebar:
 
     st.markdown("---")
     
-    with st.expander("🎨 Document Styling & Columns", expanded=False):
+    with st.expander("🎨 Document Styling & Layout", expanded=False):
         font_choice = st.selectbox("Typography Font", ["Helvetica", "Times-Roman", "Courier"], index=0)
         
         palette_choice = st.selectbox("Color Theme", list(PALETTE_PRESETS.keys()), index=0)
@@ -125,7 +125,8 @@ with st.sidebar:
         
         finish_icon_only = st.checkbox(
             "Multi-Icon Finish Mode (Shows multiple finish icons side-by-side, no text)",
-            value=True
+            value=False,
+            help="Uncheck to show finish icons alongside clear descriptive finish labels."
         )
 
         default_coats = st.number_input(
@@ -137,18 +138,24 @@ with st.sidebar:
             help="Fallback coat count for polishes that don't have a coat count specified in Koillection."
         )
 
-        # DYNAMIC FIT OPTIMIZER SELECTOR
         density_mode = st.radio(
             "Page Density Strategy",
             options=["⚡ Automatic (Optimal Dynamic Fit)", "Manual Row Count"],
             index=0,
-            help="Automatic uses our constraint algorithm to dynamically fill 100% of the page based on row wrapping and legend footprint."
+            help="Automatic dynamically fills 100% of the page based on exact 2-line row heights and legend footprint."
         )
 
         if density_mode == "Manual Row Count":
-            rows_per_page = st.number_input("Fixed Polishes per Page", min_value=20, max_value=36, value=30, step=1)
+            rows_per_page = st.number_input(
+                "Fixed Polishes per Page",
+                min_value=8,
+                max_value=22,
+                value=14,
+                step=1,
+                help="With the 2-line layout, 12 to 16 polishes fit comfortably per page alongside the per-page legend."
+            )
         else:
-            rows_per_page = 0  # 0 signals the dynamic knapsack algorithm
+            rows_per_page = 0
 
         legend_choice = st.selectbox(
             "Directory Legend Mode",
@@ -170,32 +177,14 @@ with st.sidebar:
         }
         selected_legend_mode = legend_mode_map[legend_choice]
 
-        st.markdown("**Columns to Print:**")
-        all_col_options = {
-            "location": "Location ID",
-            "color_swatch": "Color Swatch Pip",
-            "nail_type": "Formulation Type (Icon)",
-            "brand": "Brand",
-            "shade_name": "Shade Name",
-            "finish": "Finish (Icons)",
-            "coats": "Coats (Opacity Pips)",
-            "rating": "Star Rating",
-            "size_acq": "Size & Acquisition Date",
-            "item_id": "Koillection ID"
-        }
-        selected_columns = st.multiselect(
-            "Select Columns",
-            options=list(all_col_options.keys()),
-            default=["location", "color_swatch", "nail_type", "brand", "shade_name", "finish", "coats", "rating", "size_acq"],
-            format_func=lambda x: all_col_options[x]
-        )
+        st.caption("✨ **2-Line Catalog Layout:** All polish records are automatically organized into high-legibility 2-line cards featuring maximized rounded pill swatches, set tags, formulations, finishes, storage locations, and star ratings.")
 
     st.markdown("---")
     st.subheader("📑 Organization & Sorting")
 
     grouping_choice = st.selectbox(
         "Primary Grouping (PDF Banners)",
-        options=["color_family", "brand", "nail_type", "location", "finish", "rating_group", "acquisition_year", "none"],
+        options=["color_family", "brand", "nail_type", "location", "finish", "rating_group", "acquisition_year", "tags", "none"],
         index=0,
         format_func=lambda x: {
             "color_family": "🌈 Color Spectrum (Reds, Blues, Purples)",
@@ -205,6 +194,7 @@ with st.sidebar:
             "finish": "✨ Finish / Effect (Holo, Creme, Flake)",
             "rating_group": "⭐ Star Rating Tiers",
             "acquisition_year": "📅 Acquisition Year",
+            "tags": "📦 Set / Collection Tag",
             "none": "📄 Flat Directory (No Section Banners)"
         }[x]
     )
@@ -226,7 +216,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🔍 Filters (Inclusion)")
 
-    search_query = st.text_input("Search Shade / Brand / Location", placeholder="e.g. OPI, 1-A1, Holo").strip().lower()
+    search_query = st.text_input("Search Shade / Brand / Set / Location", placeholder="e.g. Mooncat, Midnight Rodeo, 1-A1").strip().lower()
 
     all_locations, all_brands, all_finishes, all_color_families, all_types = get_unique_filter_values(df_raw)
     all_collections = sorted([c for c in df_raw["collection"].unique() if c], key=str.lower)
@@ -256,6 +246,7 @@ with st.sidebar:
         ex_missing_color = st.checkbox("Hide Unswatched Polishes (Exclude missing color dots)", value=False)
         ex_unrated = st.checkbox("Hide Unrated Polishes (Exclude 0.0 star rating)", value=False)
 
+    # MASTER DOCUMENT TITLE (Used across both Tab 1 and Tab 3)
     doc_title = st.text_input("Directory Title", value="Nail Polish & Storage Location Directory")
 
 # -----------------------------------------------------------------------------
@@ -265,11 +256,12 @@ df_filtered = df_raw.copy()
 
 if search_query:
     mask = (
-        df_filtered["shade_name"].str.lower().str.contains(search_query) |
-        df_filtered["brand"].str.lower().str.contains(search_query) |
-        df_filtered["location"].str.lower().str.contains(search_query) |
-        df_filtered["nail_type"].str.lower().str.contains(search_query) |
-        df_filtered["finish"].str.lower().str.contains(search_query)
+        df_filtered["shade_name"].str.lower().str.contains(search_query, na=False) |
+        df_filtered["brand"].str.lower().str.contains(search_query, na=False) |
+        df_filtered["location"].str.lower().str.contains(search_query, na=False) |
+        df_filtered["nail_type"].str.lower().str.contains(search_query, na=False) |
+        df_filtered["finish"].str.lower().str.contains(search_query, na=False) |
+        df_filtered["tags"].str.lower().str.contains(search_query, na=False)
     )
     df_filtered = df_filtered[mask]
 
@@ -310,11 +302,12 @@ if ex_finishes:
 
 if ex_search:
     ex_mask = (
-        df_filtered["shade_name"].str.lower().str.contains(ex_search) |
-        df_filtered["brand"].str.lower().str.contains(ex_search) |
-        df_filtered["location"].str.lower().str.contains(ex_search) |
-        df_filtered["nail_type"].str.lower().str.contains(ex_search) |
-        df_filtered["finish"].str.lower().str.contains(ex_search)
+        df_filtered["shade_name"].str.lower().str.contains(ex_search, na=False) |
+        df_filtered["brand"].str.lower().str.contains(ex_search, na=False) |
+        df_filtered["location"].str.lower().str.contains(ex_search, na=False) |
+        df_filtered["nail_type"].str.lower().str.contains(ex_search, na=False) |
+        df_filtered["finish"].str.lower().str.contains(ex_search, na=False) |
+        df_filtered["tags"].str.lower().str.contains(ex_search, na=False)
     )
     df_filtered = df_filtered[~ex_mask]
 
@@ -346,6 +339,9 @@ elif grouping_choice == "location":
     sort_ascending.append(True)
 elif grouping_choice == "nail_type":
     sort_columns.append("_type_sort")
+    sort_ascending.append(True)
+elif grouping_choice == "tags":
+    sort_columns.append("tags")
     sort_ascending.append(True)
 elif grouping_choice != "none":
     sort_columns.append(grouping_choice)
@@ -400,26 +396,26 @@ This application generates archival, publication-quality 300 DPI reference catal
 
 ---
 
-#### 1. 💅 Default Coat Count Configuration
+#### 1. 📖 Luxury 2-Line Catalog Cards & Maximized Swatches
+* **Two-Line Profile:** Every polish entry now has two full lines of organized metadata, allowing for double the vertical breathing room.
+* **Maximized Pill Swatch:** The colour swatch is maximized into a high-resolution rounded pill with dual-hex split rendering for duochromes and multichromes.
+* **Set / Tag Badges:** Automatically identifies sets and collections directly on Line 1 next to the shade name (e.g. `(Set: Midnight Rodeo)`).
+
+---
+
+#### 2. 💅 Default Coat Count Configuration
 * **Configurable Default Coats:** You can configure the default coat count fallback (default is **3 coats** $\\rightarrow$ `●●●`). Any polish in your collection without a specific coat count recorded in Koillection will display this default.
 
 ---
 
-#### 2. 🔤 Natural Case-Insensitive Alphabetical Sorting
+#### 3. 🔤 Natural Case-Insensitive Alphabetical Sorting
 * **Case-Insensitive A–Z:** Brands and shade names sort in true natural order. Lowercase brand names (e.g. *cirque colors* or *essie*) appear alongside capitalized brands without being shoved to the end of the alphabet.
 
 ---
 
-#### 3. 🔍 Filtering In & Filtering OUT
+#### 4. 🔍 Filtering In & Filtering OUT
 * **Inclusion Filters:** Select specific Brands, Collections, Formulation Types, or Finishes you want to include.
 * **🚫 Exclusion Filters (Filter OUT):** Open the *"Exclusion Filters"* panel in the sidebar to omit specific records.
-
----
-
-#### 4. 🧪 Formulation Types vs. Aesthetic Finishes
-* **Formulation Type Column (`Type`):** Features dedicated vector icons for your application system.
-* **Aesthetic Finish Column (`Finish`):** Displays visual lacquer effects.
-* **Multi-Icon Mode:** Displays up to 4 vector icons side-by-side across the column without text clutter.
     """)
 
 st.markdown("---")
@@ -467,7 +463,7 @@ with tab_books:
         with st.form("new_book_form"):
             st.markdown("### ➕ Create a New Swatch Book")
             new_name = st.text_input("Book / Binder Name", placeholder="e.g. Rainbow Swatch Binder, Helmer Album A")
-            new_cap = st.number_input("Polishes per Page Sheet", min_value=10, max_value=40, value=24, step=1)
+            new_cap = st.number_input("Polishes per Page Sheet", min_value=6, max_value=24, value=14, step=1)
             new_notes = st.text_area("Notes", placeholder="e.g. Sorted chromatically by hue")
             submit_create = st.form_submit_button("Create Book", type="primary")
 
@@ -521,8 +517,7 @@ with tab_books:
                         pdf_bytes = build_tabular_directory_pdf(
                             df=incremental_df,
                             group_by="none",
-                            collection_title=f"{current_book['name']} (Update Sheet)",
-                            active_columns=selected_columns,
+                            collection_title=doc_title,
                             font_family=font_choice,
                             banner_bg=c_banner_bg,
                             banner_text=c_banner_txt,
@@ -558,7 +553,7 @@ with tab_books:
             st.markdown("### ⚙️ Book Management")
             with st.expander("✏️ Edit Book Settings"):
                 edit_name = st.text_input("Name", value=current_book["name"])
-                edit_cap = st.number_input("Capacity Per Page", min_value=10, max_value=40, value=current_book.get("items_per_page", 24))
+                edit_cap = st.number_input("Capacity Per Page", min_value=6, max_value=24, value=current_book.get("items_per_page", 14))
                 edit_notes = st.text_area("Notes", value=current_book.get("notes", ""))
                 if st.button("Save Book Settings"):
                     bm.update_book_metadata(selected_book_id, edit_name, edit_cap, edit_notes)
@@ -582,7 +577,7 @@ with tab_books:
             st.markdown("---")
             st.subheader("📄 Printable Update Preview")
             
-            safe_filename = f"Update_{current_book['name'].replace(' ', '_')}.pdf"
+            safe_filename = f"{current_book['name'].replace(' ', '_')}_Update.pdf"
             render_html5_download_button(current_pdf, safe_filename, "⬇️ Download Incremental PDF")
             
             base64_pdf = base64.b64encode(current_pdf).decode("utf-8")
@@ -596,12 +591,12 @@ with tab_books:
 # -----------------------------------------------------------------------------
 with tab_table:
     st.caption(f"Showing {len(df_filtered)} matching polishes after active inclusion and exclusion filters.")
-    for expected_col in ["color_hex", "color_family", "nail_type", "location", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"]:
+    for expected_col in ["color_hex", "color_family", "nail_type", "location", "brand", "shade_name", "tags", "finish", "coats", "rating_5", "size_oz", "purchase_date"]:
         if expected_col not in df_filtered.columns:
             df_filtered[expected_col] = ""
 
     display_df = df_filtered[[
-        "location", "color_hex", "nail_type", "color_family", "brand", "shade_name", "finish", "coats", "rating_5", "size_oz", "purchase_date"
+        "location", "color_hex", "nail_type", "color_family", "brand", "shade_name", "tags", "finish", "coats", "rating_5", "size_oz", "purchase_date"
     ]].copy()
     
     display_df["coats"] = display_df["coats"].apply(
@@ -615,6 +610,7 @@ with tab_table:
         "color_family": "Spectrum Family",
         "brand": "Brand",
         "shade_name": "Shade Name",
+        "tags": "Set / Tags",
         "finish": "Finish (Aesthetic)",
         "coats": "Coats",
         "rating_5": "Rating (0-5)",
@@ -629,6 +625,7 @@ with tab_table:
         column_config={
             "Rating (0-5)": st.column_config.NumberColumn("Rating", format="%.1f ⭐"),
             "Location": st.column_config.TextColumn("Location", help="Drawer or Slot ID"),
+            "Set / Tags": st.column_config.TextColumn("Set / Tags", help="Associated Set or Collection Tags"),
             "Hex": st.column_config.TextColumn("Hex", width="small")
         }
     )
@@ -640,17 +637,16 @@ with tab_full_pdf:
     st.subheader("Publication-Quality Complete Catalog")
     st.write(
         "Compile your complete collection from scratch with distinct section headers, "
-        "separated Type / Finish columns, and respecting all active inclusion and exclusion filters."
+        "2-line editorial cards, maximized rounded swatches, and respecting all active filters."
     )
 
     if st.button("🚀 Compile Full Collection PDF", type="primary"):
-        with st.spinner("Rendering vector swatch dots, icons, and compiling pages..."):
+        with st.spinner("Rendering vector swatch pills, icons, and compiling pages..."):
             try:
                 full_pdf_data = build_tabular_directory_pdf(
                     df=df_filtered,
                     group_by=grouping_choice,
                     collection_title=doc_title,
-                    active_columns=selected_columns,
                     font_family=font_choice,
                     banner_bg=c_banner_bg,
                     banner_text=c_banner_txt,
@@ -687,7 +683,7 @@ with tab_legend:
     st.subheader("📑 Visual Icon & Formulation Legend Sheet")
     st.write(
         "Generate a standalone, publication-quality **single 8.5\" × 11\" US Letter page** "
-        "explaining all 11 formulation types, 22 lacquer finishes, coat opacities, and swatch indicators."
+        "explaining all 11 formulation types, 23 lacquer finishes, coat opacities, and swatch indicators."
     )
 
     if st.button("🖨️ Compile 1-Page Icon Legend Sheet", type="primary"):

@@ -12,7 +12,8 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     Image as RLImage,
-    PageBreak
+    PageBreak,
+    KeepTogether
 )
 from reportlab.pdfgen import canvas
 
@@ -21,7 +22,8 @@ from icons import (
     get_finish_icon_image,
     generate_opacity_dots_image,
     generate_star_rating_image,
-    generate_color_swatch_image
+    generate_color_swatch_image,
+    compute_effective_secondary_hex
 )
 
 PAGE_WIDTH, PAGE_HEIGHT = letter
@@ -45,10 +47,13 @@ TYPE_DISPLAY_NAMES = {
 FINISH_DISPLAY_NAMES = {
     "creme": "Creme",
     "cream": "Creme",
+    "confetti": "Confetti",
+    "party": "Confetti",
     "shimmer": "Shimmer",
     "glitter": "Glitter",
     "holo": "Holo",
     "flake": "Flake",
+    "flakies": "Flakies",
     "metallic": "Metallic",
     "chrome": "Metallic",
     "pearl": "Pearl",
@@ -65,6 +70,7 @@ FINISH_DISPLAY_NAMES = {
     "glow": "Glow",
     "glass fleck": "Glass Fleck",
     "multichrome": "Multichrome",
+    "duochrome": "Duochrome",
     "crackle": "Crackle",
     "textured": "Textured",
 }
@@ -111,26 +117,6 @@ def _pil_to_flowable(pil_img, width_pt: float, height_pt: float) -> RLImage:
     return RLImage(buf, width=width_pt, height=height_pt)
 
 
-def _compute_column_widths(active_cols: list) -> list:
-    base_weights = {
-        "location": 46,
-        "color_swatch": 32,
-        "nail_type": 28,
-        "brand": 72,
-        "shade_name": 132,
-        "finish": 74,
-        "coats": 38,
-        "rating": 68,
-        "size_acq": 50,
-        "item_id": 45,
-    }
-    total_requested = sum(base_weights.get(c, 50) for c in active_cols)
-    if total_requested == 0:
-        return [USABLE_WIDTH / max(1, len(active_cols))] * len(active_cols)
-    scale = USABLE_WIDTH / float(total_requested)
-    return [round(base_weights.get(c, 50) * scale, 1) for c in active_cols]
-
-
 def _format_group_banner_text(group_key_name: str, group_value: str, count: int) -> str:
     labels = {
         "brand": "BRAND",
@@ -140,6 +126,7 @@ def _format_group_banner_text(group_key_name: str, group_value: str, count: int)
         "finish": "FINISH / EFFECT",
         "rating_group": "RATING TIER",
         "acquisition_year": "ACQUISITION YEAR",
+        "tags": "SET / COLLECTION",
         "collection": "COLLECTION"
     }
     prefix = labels.get(group_key_name, str(group_key_name).upper())
@@ -147,7 +134,6 @@ def _format_group_banner_text(group_key_name: str, group_value: str, count: int)
 
 
 def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg: str) -> Table:
-    """Builds a compact horizontal key showing ONLY icons on this page."""
     styles = getSampleStyleSheet()
     font_bold = f"{font_family}-Bold" if font_family != "Times-Roman" else "Times-Bold"
 
@@ -169,9 +155,17 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
         textColor=colors.HexColor("#333333")
     )
 
+    LABEL_COL_W = 75.0
+    CONTENT_COL_W = USABLE_WIDTH - LABEL_COL_W
+
+    # 1. Formulation Types
     raw_types = [t for t in subset_df["nail_type"].dropna().unique() if str(t).strip()]
     seen_types = set()
     type_flowables = []
+    
+    num_t = max(1, min(len(raw_types), 5))
+    chunk_w_type = CONTENT_COL_W / num_t
+
     for t_str in raw_types:
         t_clean = str(t_str).strip()
         disp_name = TYPE_DISPLAY_NAMES.get(t_clean.lower(), t_clean)
@@ -180,7 +174,7 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
         seen_types.add(disp_name.lower())
 
         icon_flow = _pil_to_flowable(get_type_icon_image(t_clean, size=14), 8, 8)
-        micro_table = Table([[icon_flow, Paragraph(disp_name, item_style)]], colWidths=[10, None])
+        micro_table = Table([[icon_flow, Paragraph(disp_name, item_style)]], colWidths=[10, max(20, chunk_w_type - 12)])
         micro_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -190,6 +184,7 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
         ]))
         type_flowables.append(micro_table)
 
+    # 2. Aesthetic Finishes
     seen_finishes = set()
     finish_flowables = []
     for raw_finish in subset_df["finish"].dropna():
@@ -199,7 +194,8 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
             if disp_finish and disp_finish.lower() not in seen_finishes:
                 seen_finishes.add(disp_finish.lower())
                 f_flow = _pil_to_flowable(get_finish_icon_image(p, size=14), 8, 8)
-                micro_table = Table([[f_flow, Paragraph(disp_finish, item_style)]], colWidths=[10, None])
+                chunk_w_fin = CONTENT_COL_W / 6.0
+                micro_table = Table([[f_flow, Paragraph(disp_finish, item_style)]], colWidths=[10, max(20, chunk_w_fin - 12)])
                 micro_table.setStyle(TableStyle([
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -209,15 +205,10 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
                 ]))
                 finish_flowables.append(micro_table)
 
-    LABEL_COL_W = 70.0
-    CONTENT_COL_W = USABLE_WIDTH - LABEL_COL_W
-
     legend_rows = []
-    # 1. Formulation Row
     if type_flowables:
         t_row = [Paragraph("<b>FORMULATION:</b>", label_style)]
-        chunk_w = CONTENT_COL_W / max(1, min(len(type_flowables), 5))
-        sub_t = Table([type_flowables[:5]], colWidths=[chunk_w] * min(len(type_flowables), 5))
+        sub_t = Table([type_flowables[:5]], colWidths=[chunk_w_type] * min(len(type_flowables), 5))
         sub_t.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -228,7 +219,6 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
         t_row.append(sub_t)
         legend_rows.append(t_row)
 
-    # 2. Finishes Row
     if finish_flowables:
         for idx in range(0, len(finish_flowables), 6):
             batch = finish_flowables[idx:idx + 6]
@@ -257,9 +247,239 @@ def _build_page_mini_legend(subset_df: pd.DataFrame, font_family: str, banner_bg
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
-    # PREVENT SPLITTING TYPES AND FINISHES ACROSS PAGES
     legend_table.splitByRow = 0
     return legend_table
+
+
+def render_polish_2line_block(
+    row: pd.Series,
+    styles: dict,
+    finish_icon_only: bool = False,
+    default_coats: int = 3
+) -> tuple:
+    """
+    Renders a single polish into 2 table sub-rows across a 4-column master grid:
+    Col 0 (46pt):  Swatch (Pill, Dual-Split if Multichrome / Secondary Hex)
+    Col 1 (340pt): Line 1 = Brand • Shade (Set) [Color Family • Size • #]
+                   Line 2 = Formulation • Finishes (Spelled Out) • [Acq • From • Fill]
+    Col 2 (68pt):  Line 1 = Location | Line 2 = Coats (Pips + Count)
+    Col 3 (86pt):  Line 1 = Rating   | Line 2 = Dual Hex (#HEX1 / #HEX2)
+    """
+    primary_hex = str(row.get("color_hex", "")).strip().upper()
+    raw_sec_hex = str(row.get("secondary_hex", "")).strip().upper()
+    f_str = str(row.get("finish", "Creme")).strip()
+    
+    # 1. Effective Secondary Hex (Explicit or Smart Chromatic Shift)
+    effective_sec = compute_effective_secondary_hex(primary_hex, raw_sec_hex, f_str)
+    
+    # Swatch Flowable (Maximized 42pt x 30pt pill)
+    swatch_pil = generate_color_swatch_image(
+        hex_code=primary_hex,
+        secondary_hex=effective_sec,
+        width=42,
+        height=30,
+        radius=5,
+        finish=f_str
+    )
+    swatch_flow = _pil_to_flowable(swatch_pil, 42, 30)
+
+    # -------------------------------------------------------------------------
+    # LINE 1 - COL 1: Identity & Rich Metadata Badges
+    # -------------------------------------------------------------------------
+    brand = str(row.get("brand", "Unknown")).strip()
+    shade = str(row.get("shade_name", "Untitled")).strip()
+    tags = str(row.get("tags", "")).strip()
+    family = str(row.get("color_family", "")).strip()
+    size_oz = str(row.get("size_oz", "")).strip()
+    bottle_num = str(row.get("bottle_number", "")).strip()
+    is_dc = bool(row.get("is_discontinued", False))
+
+    tag_html = f' &nbsp; <font color="#55606E" size="7.5"><i>(Set: {tags})</i></font>' if tags else ''
+
+    line1_meta_parts = []
+    if family and family != "No Color Set":
+        line1_meta_parts.append(f'<font color="#4B5563"><i>{family}</i></font>')
+    if size_oz:
+        line1_meta_parts.append(f'<font color="#6B7280">{size_oz} oz</font>')
+    if bottle_num:
+        line1_meta_parts.append(f'<font color="#6B7280">#{bottle_num}</font>')
+    if is_dc:
+        line1_meta_parts.append('<font color="#DC2626"><b>[DISCONTINUED]</b></font>')
+
+    badge_html = f' &nbsp;&nbsp; <font color="#9CA3AF" size="7.5">[{ " • ".join(line1_meta_parts) }]</font>' if line1_meta_parts else ''
+    line1_desc_html = f'<b><font color="#111827" size="9">{brand}</font></b> &nbsp;•&nbsp; <font color="#1F2937" size="9"><b>{shade}</b></font>{tag_html}{badge_html}'
+    line1_desc = Paragraph(line1_desc_html, styles["CellNormal"])
+
+    # LINE 1 - COL 2: Location
+    loc_str = str(row.get("location", "—")).strip()
+    line1_loc = Paragraph(f'<b><font size="8.5" color="#111827">{loc_str}</font></b>', styles["CellCenter"])
+
+    # LINE 1 - COL 3: Star Rating (0-5 stars)
+    r_score = float(row.get("rating_5", 0.0))
+    stars_pil = generate_star_rating_image(r_score, width=58, height=11)
+    line1_rating = _pil_to_flowable(stars_pil, 54, 10)
+
+    # -------------------------------------------------------------------------
+    # LINE 2 - COL 1: Formulation, Spelled-Out Finishes & Acquisition/Fill Meta
+    # -------------------------------------------------------------------------
+    t_str = str(row.get("nail_type", "Regular Nail Lacquer")).strip()
+    t_disp = TYPE_DISPLAY_NAMES.get(t_str.lower(), t_str)
+    t_pil = get_type_icon_image(t_str, size=14)
+    t_flow = _pil_to_flowable(t_pil, 9, 9)
+
+    finish_parts = [piece.strip() for piece in f_str.split(",") if piece.strip()]
+    if not finish_parts:
+        finish_parts = ["Creme"]
+
+    if finish_icon_only:
+        fin_icon_flowables = []
+        for f_name in finish_parts[:4]:
+            f_pil = get_finish_icon_image(f_name, size=14)
+            fin_icon_flowables.append(_pil_to_flowable(f_pil, 9, 9))
+        fin_table = Table([fin_icon_flowables], colWidths=[12.0] * len(fin_icon_flowables))
+        fin_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        fin_cell = fin_table
+        fin_col_w = 55
+    else:
+        primary_finish = finish_parts[0]
+        f_pil = get_finish_icon_image(primary_finish, size=14)
+        f_flow = _pil_to_flowable(f_pil, 9, 9)
+        fin_label = ", ".join(finish_parts[:3])
+        fin_cell = Table([[f_flow, Paragraph(f"<font color='#4B5563' size='7.5'>{fin_label}</font>", styles["CellNormal"])]], colWidths=[11, 134])
+        fin_cell.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        fin_col_w = 145
+
+    acq_date = str(row.get("purchase_date", "")).strip()
+    purchased_from = str(row.get("purchased_from", "")).strip()
+    fill_level = str(row.get("fill_level", "")).strip()
+
+    line2_meta_parts = []
+    if acq_date:
+        acq_yr = acq_date[:4] if len(acq_date) >= 4 and acq_date[:4].isdigit() else acq_date
+        line2_meta_parts.append(f"Acq: {acq_yr}")
+    if purchased_from:
+        line2_meta_parts.append(f"From: {purchased_from[:14]}")
+    if fill_level:
+        line2_meta_parts.append(f"Fill: {fill_level}")
+
+    meta2_str = " • ".join(line2_meta_parts)
+    line2_meta_p = Paragraph(f"<font color='#6B7280' size='7'>{meta2_str}</font>", styles["CellNormal"])
+
+    type_cell = Table([[t_flow, Paragraph(f"<font color='#1F2937' size='7.5'><b>{t_disp}</b></font>", styles["CellNormal"])]], colWidths=[11, 74])
+    type_cell.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    rem_meta_w = max(40, 340 - 85 - fin_col_w)
+    meta_table = Table(
+        [[type_cell, fin_cell, line2_meta_p]],
+        colWidths=[85, fin_col_w, rem_meta_w]
+    )
+    meta_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    # LINE 2 - COL 2: Required Coats (Opacity Pips + Numeric Count)
+    raw_coats = str(row.get("coats", "")).strip()
+    coats_val = raw_coats if raw_coats and raw_coats not in ["", "None", "nan", "0"] else str(default_coats)
+    pips_pil = generate_opacity_dots_image(coats_val, max_coats=3, width=34, height=10)
+    pips_flow = _pil_to_flowable(pips_pil, 30, 9)
+    line2_coats = Table(
+        [[pips_flow, Paragraph(f'<font size="7" color="#4B5563">{coats_val}c</font>', styles["CellNormal"])]],
+        colWidths=[32, 22]
+    )
+    line2_coats.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    # LINE 2 - COL 3: Hex Code Monospace (Displays both hex codes if secondary exists)
+    if primary_hex:
+        if effective_sec and effective_sec != primary_hex:
+            hex_markup = f'<font color="#111827" size="6.5" face="Courier"><b>{primary_hex}</b></font> <font color="#9CA3AF" size="6">/</font> <font color="#4B5563" size="6.5" face="Courier"><b>{effective_sec}</b></font>'
+        else:
+            hex_markup = f'<font color="#374151" size="7" face="Courier"><b>{primary_hex}</b></font>'
+        line2_hex = Paragraph(hex_markup, styles["CellCenter"])
+    else:
+        line2_hex = Paragraph('<font color="#AAAAAA" size="7">No Hex</font>', styles["CellCenter"])
+
+    row_top = [swatch_flow, line1_desc, line1_loc, line1_rating]
+    row_bot = ["", meta_table, line2_coats, line2_hex]
+
+    return row_top, row_bot
+
+
+def build_2line_catalog_table(
+    polish_blocks: list,
+    headers: list,
+    col_widths: list,
+    header_bg: str = "#ECEFF1",
+    zebra_bg: str = "#F8F9FA",
+    compact_mode: bool = True,
+    repeat_rows: int = 0
+) -> Table:
+    table_data = [headers]
+    for top_r, bot_r in polish_blocks:
+        table_data.append(top_r)
+        table_data.append(bot_r)
+
+    pad_top = 2.0 if compact_mode else 3.5
+    pad_bot = 2.0 if compact_mode else 3.5
+
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.0, colors.HexColor("#B0BEC5")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (2, 0), (3, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, 0), 3.0),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 3.0),
+    ]
+
+    for idx in range(len(polish_blocks)):
+        row_top = 1 + idx * 2
+        row_bot = row_top + 1
+
+        style_cmds.append(("SPAN", (0, row_top), (0, row_bot)))
+
+        if idx % 2 == 1:
+            style_cmds.append(("BACKGROUND", (0, row_top), (-1, row_bot), colors.HexColor(zebra_bg)))
+
+        style_cmds.append(("TOPPADDING", (0, row_top), (-1, row_top), pad_top))
+        style_cmds.append(("BOTTOMPADDING", (0, row_top), (-1, row_top), 0.5))
+        style_cmds.append(("TOPPADDING", (0, row_bot), (-1, row_bot), 0.5))
+        style_cmds.append(("BOTTOMPADDING", (0, row_bot), (-1, row_bot), pad_bot))
+
+        style_cmds.append(("LINEBELOW", (0, row_bot), (-1, row_bot), 0.5, colors.HexColor("#E0E0E0")))
+
+    t = Table(table_data, colWidths=col_widths, repeatRows=repeat_rows)
+    t.setStyle(TableStyle(style_cmds))
+    return t
 
 
 def build_tabular_directory_pdf(
@@ -282,9 +502,6 @@ def build_tabular_directory_pdf(
     rows_per_page: int = 0,
     **kwargs
 ) -> bytes:
-    if active_columns is None or len(active_columns) == 0:
-        active_columns = ["location", "color_swatch", "nail_type", "brand", "shade_name", "finish", "coats", "rating", "size_acq"]
-
     TOP_MARGIN = 32.0
     BOTTOM_MARGIN = 34.0
 
@@ -337,13 +554,10 @@ def build_tabular_directory_pdf(
         textColor=colors.HexColor(header_text)
     )
 
-    cell_bold = ParagraphStyle(
-        "CellBold",
-        parent=styles["Normal"],
-        fontName=font_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#111111")
+    header_cell_center = ParagraphStyle(
+        "HeaderCellCenter",
+        parent=header_cell_style,
+        alignment=1
     )
 
     cell_normal = ParagraphStyle(
@@ -355,118 +569,26 @@ def build_tabular_directory_pdf(
         textColor=colors.HexColor("#222222")
     )
 
-    cell_muted = ParagraphStyle(
-        "CellMuted",
-        parent=styles["Normal"],
-        fontName=font_family,
-        fontSize=7,
-        leading=9,
-        textColor=colors.HexColor("#666666")
+    cell_center = ParagraphStyle(
+        "CellCenter",
+        parent=cell_normal,
+        alignment=1
     )
 
-    col_widths = _compute_column_widths(active_columns)
-
-    header_titles = {
-        "location": "Location",
-        "color_swatch": "Color",
-        "nail_type": "Type",
-        "brand": "Brand",
-        "shade_name": "Shade Name",
-        "finish": "Finish" if not finish_icon_only else "Finishes",
-        "coats": "Coats",
-        "rating": "Rating",
-        "size_acq": "Size / Acq",
-        "item_id": "Item ID"
+    render_styles = {
+        "CellNormal": cell_normal,
+        "CellCenter": cell_center
     }
 
-    headers = [Paragraph(f"<b>{header_titles.get(col, col.capitalize())}</b>", header_cell_style) for col in active_columns]
+    # 4-Column Balanced Grid: Sum = 540.0 pt (US Letter Width)
+    col_widths = [46.0, 340.0, 68.0, 86.0]
 
-    padding_v = 2.5 if compact_mode else 4.5
-
-    def get_table_style():
-        return TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
-            ("LINEBELOW", (0, 0), (-1, 0), 1.0, colors.HexColor("#B0BEC5")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(zebra_bg)]),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), padding_v),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), padding_v),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("LINEBELOW", (0, 1), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),
-        ])
-
-    def render_single_row_cells(row):
-        row_cells = []
-        for col in active_columns:
-            if col == "location":
-                row_cells.append(Paragraph(str(row.get("location", "—")), cell_bold))
-            elif col == "color_swatch":
-                swatch_pil = generate_color_swatch_image(row.get("color_hex", ""), size=18)
-                row_cells.append(_pil_to_flowable(swatch_pil, 11, 11))
-            elif col == "nail_type":
-                t_str = str(row.get("nail_type", "Regular Nail Lacquer"))
-                t_pil = get_type_icon_image(t_str, size=18)
-                row_cells.append(_pil_to_flowable(t_pil, 11, 11))
-            elif col == "brand":
-                row_cells.append(Paragraph(str(row.get("brand", "—")), cell_normal))
-            elif col == "shade_name":
-                row_cells.append(Paragraph(str(row.get("shade_name", "—")), cell_bold))
-            elif col == "finish":
-                f_str = str(row.get("finish", "Creme"))
-                finish_parts = [piece.strip() for piece in f_str.split(",") if piece.strip()]
-                if not finish_parts:
-                    finish_parts = ["Creme"]
-
-                if finish_icon_only:
-                    icon_flowables = []
-                    for f_name in finish_parts[:4]:
-                        f_pil = get_finish_icon_image(f_name, size=16)
-                        icon_flowables.append(_pil_to_flowable(f_pil, 11, 11))
-                    
-                    col_w_list = [14.0] * len(icon_flowables)
-                    multi_icon_table = Table([icon_flowables], colWidths=col_w_list)
-                    multi_icon_table.setStyle(TableStyle([
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-                        ("TOPPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ]))
-                    row_cells.append(multi_icon_table)
-                else:
-                    primary_finish = finish_parts[0]
-                    f_pil = get_finish_icon_image(primary_finish, size=16)
-                    f_flow = _pil_to_flowable(f_pil, 10, 10)
-                    finish_table = Table([[f_flow, Paragraph(f_str[:16], cell_normal)]], colWidths=[12, None])
-                    finish_table.setStyle(TableStyle([
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                        ("TOPPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ]))
-                    row_cells.append(finish_table)
-            elif col == "coats":
-                raw_coats = str(row.get("coats", "")).strip()
-                coats_val = raw_coats if raw_coats and raw_coats not in ["", "None", "nan", "0"] else str(default_coats)
-                pips_pil = generate_opacity_dots_image(coats_val, max_coats=3, width=38, height=12)
-                row_cells.append(_pil_to_flowable(pips_pil, 32, 9))
-            elif col == "rating":
-                r_score = float(row.get("rating_5", 0.0))
-                stars_pil = generate_star_rating_image(r_score, width=70, height=13)
-                row_cells.append(_pil_to_flowable(stars_pil, 58, 10))
-            elif col == "size_acq":
-                s_val = row.get("size_oz", "")
-                a_val = row.get("purchase_date", "")
-                parts = [str(x) for x in [s_val, a_val] if x]
-                row_cells.append(Paragraph(" • ".join(parts) if parts else "-", cell_muted))
-            elif col == "item_id":
-                row_cells.append(Paragraph(str(row.get("item_id", ""))[:8], cell_muted))
-            else:
-                row_cells.append(Paragraph(str(row.get(col, "")), cell_normal))
-        return row_cells
+    headers = [
+        Paragraph("<b>Swatch</b>", header_cell_center),
+        Paragraph("<b>Polish & Formulation Details</b>", header_cell_style),
+        Paragraph("<b>Location / Coats</b>", header_cell_center),
+        Paragraph("<b>Rating / Hex</b>", header_cell_center),
+    ]
 
     story = []
 
@@ -488,34 +610,36 @@ def build_tabular_directory_pdf(
     story.append(Spacer(1, 8))
 
     FRAME_HEIGHT = PAGE_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN  # 726.0 pt
-    
-    # 18pt buffer prevents Page 1 header collisions
-    PAGE_1_BUFFER = 18.0
-    OTHER_PAGES_BUFFER = 8.0
+    SHOCK_BUFFER = 20.0
+
+    all_polish_blocks = [
+        render_polish_2line_block(row, render_styles, finish_icon_only=finish_icon_only, default_coats=default_coats)
+        for _, row in df.iterrows()
+    ]
 
     # -------------------------------------------------------------------------
-    # SWEET-SPOT EXACT PAGINATION
+    # REAL-TIME DYNAMIC SWEET-SPOT PAGINATION ENGINE
     # -------------------------------------------------------------------------
     if legend_mode == "per_page" and not df.empty:
-        all_data_row_cells = [render_single_row_cells(row) for _, row in df.iterrows()]
-
         current_idx = 0
         is_page_one = True
         pages_to_render = []
 
         while current_idx < len(df):
             if is_page_one:
-                page_budget = FRAME_HEIGHT - page_1_header_overhead - PAGE_1_BUFFER
+                page_budget = FRAME_HEIGHT - page_1_header_overhead - SHOCK_BUFFER
             else:
-                page_budget = FRAME_HEIGHT - OTHER_PAGES_BUFFER
+                page_budget = FRAME_HEIGHT - SHOCK_BUFFER
             
             best_k = 1
             max_possible_k = len(df) - current_idx
 
             for test_k in range(1, max_possible_k + 1):
-                candidate_rows = [headers] + all_data_row_cells[current_idx : current_idx + test_k]
-                test_table = Table(candidate_rows, colWidths=col_widths)
-                test_table.setStyle(get_table_style())
+                candidate_blocks = all_polish_blocks[current_idx : current_idx + test_k]
+                test_table = build_2line_catalog_table(
+                    candidate_blocks, headers, col_widths,
+                    header_bg=header_bg, zebra_bg=zebra_bg, compact_mode=compact_mode
+                )
                 _, h_table = test_table.wrap(USABLE_WIDTH, 2000)
 
                 candidate_df = df.iloc[current_idx : current_idx + test_k]
@@ -533,14 +657,19 @@ def build_tabular_directory_pdf(
                     break
 
             if rows_per_page > 0:
-                manual_cap = max(10, rows_per_page - 3) if is_page_one else rows_per_page
+                manual_cap = max(6, (rows_per_page // 2) - 1) if is_page_one else max(6, rows_per_page // 2)
                 best_k = min(best_k, manual_cap)
 
-            final_rows = [headers] + all_data_row_cells[current_idx : current_idx + best_k]
-            final_table = Table(final_rows, colWidths=col_widths)
-            final_table.setStyle(get_table_style())
+            final_blocks = all_polish_blocks[current_idx : current_idx + best_k]
+            final_table = build_2line_catalog_table(
+                final_blocks, headers, col_widths,
+                header_bg=header_bg, zebra_bg=zebra_bg, compact_mode=compact_mode
+            )
 
-            final_legend = _build_page_mini_legend(df.iloc[current_idx : current_idx + best_k], font_family=font_family, banner_bg=banner_bg)
+            final_legend = _build_page_mini_legend(
+                df.iloc[current_idx : current_idx + best_k],
+                font_family=font_family, banner_bg=banner_bg
+            )
 
             pages_to_render.append((final_table, final_legend))
 
@@ -548,17 +677,17 @@ def build_tabular_directory_pdf(
             is_page_one = False
 
         for p_idx, (p_table, p_legend) in enumerate(pages_to_render):
-            story.append(p_table)
-            story.append(Spacer(1, 4))
-            story.append(p_legend)
+            story.append(KeepTogether([p_table, Spacer(1, 4), p_legend]))
             if p_idx < len(pages_to_render) - 1:
                 story.append(PageBreak())
 
     else:
         if group_by != "none" and not df.empty and group_by in df.columns:
             groups = df.groupby(group_by, sort=False)
+            group_offset = 0
             for group_key, group_df in groups:
-                group_label = _format_group_banner_text(group_by, str(group_key), len(group_df))
+                group_len = len(group_df)
+                group_label = _format_group_banner_text(group_by, str(group_key), group_len)
                 banner_table = Table([[Paragraph(group_label, section_style)]], colWidths=[USABLE_WIDTH])
                 banner_table.setStyle(TableStyle([
                     ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(banner_bg)),
@@ -569,15 +698,19 @@ def build_tabular_directory_pdf(
                 story.append(Spacer(1, 5))
                 story.append(banner_table)
 
-                rows = [headers] + [render_single_row_cells(row) for _, row in group_df.iterrows()]
-                t = Table(rows, colWidths=col_widths, repeatRows=1)
-                t.setStyle(get_table_style())
+                group_blocks = all_polish_blocks[group_offset : group_offset + group_len]
+                t = build_2line_catalog_table(
+                    group_blocks, headers, col_widths,
+                    header_bg=header_bg, zebra_bg=zebra_bg, compact_mode=compact_mode, repeat_rows=1
+                )
                 story.append(t)
                 story.append(Spacer(1, 6))
+                group_offset += group_len
         else:
-            rows = [headers] + [render_single_row_cells(row) for _, row in df.iterrows()]
-            t = Table(rows, colWidths=col_widths, repeatRows=1)
-            t.setStyle(get_table_style())
+            t = build_2line_catalog_table(
+                all_polish_blocks, headers, col_widths,
+                header_bg=header_bg, zebra_bg=zebra_bg, compact_mode=compact_mode, repeat_rows=1
+            )
             story.append(t)
 
     if legend_mode == "last_page":
@@ -660,6 +793,7 @@ def get_legend_flowables(
 
     col_w = 264.0
 
+    # LEFT COLUMN: 1. FORMULATION TYPES (10 items)
     types_rows = [
         [Table([[Paragraph("FORMULATION TYPES & SYSTEMS", sec_banner_style)]], colWidths=[col_w])]
     ]
@@ -695,6 +829,7 @@ def get_legend_flowables(
         ("LINEBELOW", (0, 1), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),
     ]))
 
+    # LEFT COLUMN: 2. DIRECTORY INDICATORS
     indicator_banner = Table([[Paragraph("DIRECTORY RATINGS, OPACITY & SWATCHES", sec_banner_style)]], colWidths=[col_w])
     indicator_banner.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(banner_bg)),
@@ -703,14 +838,14 @@ def get_legend_flowables(
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    swatch_flow = _pil_to_flowable(generate_color_swatch_image("#7B1FA2", size=18), 12, 12)
+    swatch_flow = _pil_to_flowable(generate_color_swatch_image("#7B1FA2", width=36, height=22, radius=4), 28, 16)
     pips_flow = _pil_to_flowable(generate_opacity_dots_image("2", max_coats=3, width=38, height=12), 34, 10)
     stars_flow = _pil_to_flowable(generate_star_rating_image(4.5, width=70, height=13), 58, 11)
 
     indicators_rows = [
         [
             swatch_flow,
-            [Paragraph("<b>Color Swatch Pip</b>", item_title_style), Paragraph("Filled circle shows true hex color. Dashed ring indicates unswatched.", item_desc_style)]
+            [Paragraph("<b>Color Swatch Pill</b>", item_title_style), Paragraph("Large true hex preview with dual-split support for multichromes.", item_desc_style)]
         ],
         [
             pips_flow,
@@ -743,6 +878,7 @@ def get_legend_flowables(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
+    # RIGHT COLUMN: ALL 23 AESTHETIC FINISHES
     right_rows = [
         [Table([[Paragraph("AESTHETIC FINISHES & SPECIAL EFFECTS", sec_banner_style)]], colWidths=[col_w])]
     ]
@@ -751,6 +887,7 @@ def get_legend_flowables(
         ("creme", "Creme", "Classic smooth, opaque color with glossy non-sparkle finish."),
         ("shimmer", "Shimmer", "Fine micro-particles creating luminous depth and glow."),
         ("glitter", "Glitter", "Reflective multi-sized hexagonal, square, or star sequins."),
+        ("confetti", "Confetti", "Suspended multi-colored matte sequins, dots, or streamer glitters."),
         ("holo", "Holo (Holographic)", "Prismatic rainbow diffraction (linear or scattered)."),
         ("flake", "Flake / Flakies", "Irregular iridescent, metallic, or chameleon foil shards."),
         ("metallic", "Metallic / Chrome", "High-contrast mirror or brushed reflective liquid metal."),
@@ -783,8 +920,8 @@ def get_legend_flowables(
         ("BACKGROUND", (0, 0), (1, 0), colors.HexColor(banner_bg)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("LINEBELOW", (0, 1), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),

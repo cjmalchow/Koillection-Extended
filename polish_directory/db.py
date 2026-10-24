@@ -101,7 +101,7 @@ def hex_to_color_profile(hex_code: str):
             family = "Grays & Neutrals"
             sort_order = 3
         elif h_deg < 15 or h_deg >= 345:
-            family = "Reds & Crimsons"
+            family = "Reds & Crimsums"
             sort_order = 4
         elif 15 <= h_deg < 45:
             family = "Oranges & Corals"
@@ -148,6 +148,14 @@ def fetch_polish_inventory() -> pd.DataFrame:
         FROM koi_item i
         LEFT JOIN koi_collection c ON i.collection_id = c.id
         LEFT JOIN koi_datum d ON d.item_id = i.id
+        LEFT JOIN (
+            SELECT 
+                kit.item_id AS item_id,
+                STRING_AGG(DISTINCT kt.label, ', ') AS tags
+            FROM koi_item_tag kit
+            JOIN koi_tag kt ON kt.id = kit.tag_id
+            GROUP BY kit.item_id
+        ) item_tags ON item_tags.item_id = i.id
         ORDER BY i.name ASC
     """)
     
@@ -168,12 +176,18 @@ def fetch_polish_inventory() -> pd.DataFrame:
                 "collection": row.collection_title or "Uncategorized",
                 "brand": "Unknown Brand",
                 "color_hex": "",
+                "secondary_hex": "",
                 "has_exact_hex": False,
+                "tags": str(getattr(row, "item_tags", "") or "").strip(),
                 "nail_type": "Regular Nail Lacquer",
                 "finish": "Creme",
-                "coats": "",       # Unset so app setting default can apply dynamically
+                "coats": "",
                 "size_oz": "",
+                "bottle_number": "",
+                "fill_level": "",
+                "purchased_from": "",
                 "purchase_date": "",
+                "is_discontinued": False,
                 "location": "Unassigned",
                 "rating_10": None,
                 "rating_5": 0.0,
@@ -188,53 +202,75 @@ def fetch_polish_inventory() -> pd.DataFrame:
         label_lower = label.lower()
         datum_type = (row.datum_type or "").lower()
         
-        # 1. Exact Hex Fields
-        if "colour (hex)" in label_lower or "color (hex)" in label_lower or label_lower == "hex" or datum_type == "color":
-            if not polishes[item_id]["has_exact_hex"]:
-                found_hex = extract_valid_hex(clean_val)
-                if found_hex:
-                    polishes[item_id]["color_hex"] = found_hex
-                    polishes[item_id]["has_exact_hex"] = True
+        # 1. SECONDARY HEX FIRST (Prevents "colour (hex)" collision with Field 10)
+        if "secondary" in label_lower or "finish (colour picker)" in label_lower or label_lower in ["color 2", "colour 2", "finish color"]:
+            found_sec_hex = extract_valid_hex(clean_val)
+            if found_sec_hex:
+                polishes[item_id]["secondary_hex"] = found_sec_hex
 
-        # 2. Descriptive Color Fallback
+        # 2. PRIMARY EXACT HEX (Field 9)
+        elif ("colour (hex)" in label_lower or "color (hex)" in label_lower or label_lower == "hex" or datum_type == "color"):
+            found_hex = extract_valid_hex(clean_val)
+            if found_hex and not polishes[item_id]["has_exact_hex"]:
+                polishes[item_id]["color_hex"] = found_hex
+                polishes[item_id]["has_exact_hex"] = True
+
+        # 3. Descriptive Color Fallback
         elif label_lower in ["color", "colour", "primary color", "swatch color"]:
             if not polishes[item_id]["has_exact_hex"] and not polishes[item_id]["color_hex"]:
                 found_hex = extract_valid_hex(clean_val)
                 if found_hex:
                     polishes[item_id]["color_hex"] = found_hex
 
-        # 3. Formulation Type
+        # 4. Formulation Type (Field 4)
         elif label_lower in ["nail polish type", "polish type", "type"]:
             if clean_val:
                 polishes[item_id]["nail_type"] = clean_val
 
-        # 4. Brand
+        # 5. Brand (Field 1)
         elif label_lower == "brand":
             polishes[item_id]["brand"] = clean_val or "Unknown Brand"
 
-        # 5. Aesthetic Finish
-        elif label_lower in ["finish", "finish (colour picker)", "lacquer finish", "effect"]:
-            if clean_val:
+        # 6. Aesthetic Finish (Field 5)
+        elif label_lower in ["finish", "lacquer finish", "effect", "lacquer type"]:
+            if clean_val and "picker" not in label_lower:
                 polishes[item_id]["finish"] = clean_val
 
-        # 6. Coats (Only sets if explicitly entered in Koillection)
+        # 7. Coats (Field 12)
         elif label_lower in ["coats", "coat count"]:
             if clean_val and clean_val.strip() not in ["", "None", "nan", "0"]:
                 polishes[item_id]["coats"] = clean_val.strip()
 
-        # 7. Size
+        # 8. Size (Field 11)
         elif "size" in label_lower:
             polishes[item_id]["size_oz"] = clean_val
 
-        # 8. Purchase Date
+        # 9. Bottle Number (Field 18)
+        elif label_lower in ["bottle number", "bottle #", "bottle no", "bottle no."]:
+            polishes[item_id]["bottle_number"] = clean_val
+
+        # 10. Fill Level (Field 16)
+        elif label_lower in ["fill level", "fill", "level"]:
+            polishes[item_id]["fill_level"] = clean_val
+
+        # 11. Purchased From (Field 23)
+        elif label_lower in ["purchased from", "purchased", "bought from", "vendor", "retailer", "store"]:
+            polishes[item_id]["purchased_from"] = clean_val
+
+        # 12. Purchase Date (Field 22)
         elif label_lower in ["purchase date", "acquisition date", "date"]:
             polishes[item_id]["purchase_date"] = clean_val
 
-        # 9. Location
+        # 13. Discontinued Status (Field 25)
+        elif "discontinued" in label_lower or label_lower in ["dc", "le", "limited edition"]:
+            if clean_val.lower() in ["1", "true", "yes", "checked"]:
+                polishes[item_id]["is_discontinued"] = True
+
+        # 14. Location (Field 13)
         elif label_lower in ["location", "storage location", "slot"]:
             polishes[item_id]["location"] = clean_val or "Unassigned"
 
-        # 10. Star Rating
+        # 15. Star Rating (Field 27)
         elif label_lower in ["overall rating", "rating"]:
             try:
                 raw_score = float(clean_val)
@@ -243,10 +279,23 @@ def fetch_polish_inventory() -> pd.DataFrame:
             except (ValueError, TypeError):
                 polishes[item_id]["rating_5"] = 0.0
 
+        # 16. Datum Tag / Set Fallback
+        elif label_lower in ["set", "set name", "collection set", "tag", "tags"]:
+            if clean_val:
+                current_tags = polishes[item_id]["tags"]
+                if not current_tags:
+                    polishes[item_id]["tags"] = clean_val
+                elif clean_val.lower() not in current_tags.lower():
+                    polishes[item_id]["tags"] = f"{current_tags}, {clean_val}"
+
     # Clean & Deduplicate fields
     for p in polishes.values():
         p["shade_name"] = clean_shade_name(p["raw_shade_name"], p["brand"])
         
+        if p["tags"]:
+            tag_parts = [t.strip() for t in p["tags"].split(",") if t.strip()]
+            p["tags"] = ", ".join(dict.fromkeys(tag_parts))
+
         raw_finish_parts = [piece.strip() for piece in str(p["finish"]).split(",") if piece.strip()]
         cleaned_finish_parts = []
         for part in raw_finish_parts:

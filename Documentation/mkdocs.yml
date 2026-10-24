@@ -1,0 +1,31 @@
+site_name: Koillection Nail Polish Edition Documentation
+site_description: User guide and documentation for Koillection Nail Polish Edition collection management application.
+
+theme:
+  name: material
+  palette:
+    # Light Mode: Clean, glossy white with a vibrant pinkish-purple primary accent
+    - scheme: default
+      primary: pink
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark Mode: Deep, sleek midnight finish with glowing neon-berry highlights
+    - scheme: slate
+      primary: pink
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - About: about.md
+
